@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.2.3 — 2026-05-21 — memstat process detection actually works
+
+**Fixed**
+- **`/memstat` couldn't see running processes** (always showed "idle" even while `node`/qmd was pegging CPU). Root cause: the PowerShell command was passed inside a bash single-quoted string containing `''node.exe''` — the embedded `''` silently terminates bash quoting, so PowerShell received a mangled command and returned nothing. Rewrote the process query using bash double-quotes with `\"`/`\$` escaping.
+- **`running -1s`** — `Get-CimInstance` returns `CreationDate` already as a `[DateTime]`; the code called `ToDateTime()` (a WMI/`Get-WmiObject` idiom) which threw, yielding age -1. Now uses `CreationDate` directly.
+- **False "possible stall" warning during model load.** The stall heuristic (>2min running, 0 vector delta) fired during the normal ~30-60s model-load / batch-compute phase when vectors haven't committed yet. Added a CPU-time delta as a second signal: if vectors aren't moving but the process is burning CPU → "working (vectors commit per-batch), not hung"; only flags a real stall when vectors are static AND CPU is idle.
+
 ## v6.2.2 — 2026-05-21 — Portable PATH fix (Git Bash) + memstat hardening
 
 **Fixed**

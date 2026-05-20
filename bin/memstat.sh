@@ -42,19 +42,31 @@ human_age() {  # seconds -> "1h 2m" / "3m" / "12s"
 }
 
 # --- gather: memory-related processes (node running qmd, ctags) ---
+# NOTE: uses bash DOUBLE-quotes with \" / \$ escaping. Do NOT switch to bash
+# single-quotes — embedding '' inside a '...' string silently breaks quoting
+# and PowerShell receives a mangled command (returns nothing).
 get_procs() {
-  powershell.exe -NoProfile -Command '
-    Get-CimInstance Win32_Process -Filter "Name=''node.exe'' OR Name=''ctags.exe''" |
-    Where-Object { $_.CommandLine -match "qmd|codemap|ctags" -or $_.Name -eq "ctags.exe" } |
+  powershell.exe -NoProfile -Command "
+    Get-CimInstance Win32_Process -Filter \"Name='node.exe' OR Name='ctags.exe'\" |
+    Where-Object { \$_.CommandLine -match 'qmd|codemap|\.codemap' -or \$_.Name -eq 'ctags.exe' } |
     ForEach-Object {
-      $ram = [math]::Round($_.WorkingSetSize/1MB)
-      $started = try { ([Management.ManagementDateTimeConverter]::ToDateTime($_.CreationDate)) } catch { $null }
-      $age = if ($started) { [int]((Get-Date) - $started).TotalSeconds } else { -1 }
-      $cmd = $_.CommandLine
-      $kind = if ($cmd -match "embed") {"embed"} elseif ($cmd -match "update") {"update"} elseif ($cmd -match "query|search|vsearch") {"query"} elseif ($_.Name -eq "ctags.exe") {"codemap"} else {"node"}
-      "{0}|{1}|{2}|{3}" -f $_.ProcessId, $ram, $age, $kind
+      \$ram = [math]::Round(\$_.WorkingSetSize/1MB)
+      \$age = if (\$_.CreationDate) { [int]((Get-Date) - \$_.CreationDate).TotalSeconds } else { -1 }
+      \$cmd = \$_.CommandLine
+      \$kind = if (\$cmd -match 'embed') {'embed'} elseif (\$cmd -match 'update') {'update'} elseif (\$cmd -match 'query|search|vsearch') {'query'} elseif (\$_.Name -eq 'ctags.exe') {'codemap'} else {'node'}
+      '{0}|{1}|{2}|{3}' -f \$_.ProcessId, \$ram, \$age, \$kind
     }
-  ' 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+\|'
+  " 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+\|'
+}
+
+# --- gather: total CPU time (100ns units) for a PID, for stall detection ---
+get_cpu_time() {
+  local pid="$1"
+  [[ -z "$pid" ]] && { echo 0; return; }
+  powershell.exe -NoProfile -Command "
+    \$p = Get-CimInstance Win32_Process -Filter \"ProcessId=$pid\" -ErrorAction SilentlyContinue
+    if (\$p) { \$p.KernelModeTime + \$p.UserModeTime } else { 0 }
+  " 2>/dev/null | tr -d '\r' | grep -oE '^[0-9]+' | head -1
 }
 
 # --- gather: qmd index status (vectors / pending) ---
@@ -152,25 +164,30 @@ render() {
     # A process is running — sample vector delta to detect progress
     local embed_running; embed_running=$(echo "$procs" | grep -c 'embed')
     if (( embed_running > 0 )); then
-      printf '  %s… embed running — sampling progress (%ss)…%s\n' "$c_dim" "3" "$c_reset"
-      local v1 v2
+      local epid
+      epid=$(echo "$procs" | grep 'embed' | awk -F'|' '{print $1}' | head -1)
+      printf '  %s… embed running — sampling progress (3s)…%s\n' "$c_dim" "$c_reset"
+      local v1 v2 cpu1 cpu2
       v1=$(echo "$status" | grep -oiE 'Vectors:[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -1)
+      cpu1=$(get_cpu_time "$epid")
       sleep 3
       v2=$(get_qmd_status | grep -oiE 'Vectors:[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -1)
-      v1=${v1:-0}; v2=${v2:-0}
+      cpu2=$(get_cpu_time "$epid")
+      v1=${v1:-0}; v2=${v2:-0}; cpu1=${cpu1:-0}; cpu2=${cpu2:-0}
       local delta=$((v2 - v1))
+      # CPU time is in 100ns units; >1e8 over 3s ≈ >0.01 core-sec, meaningful work
+      local cpu_delta=$((cpu2 - cpu1))
       if (( delta > 0 )); then
         printf '  %s✓ progressing: +%d vectors in 3s (now %d)%s\n' "$c_grn" "$delta" "$v2" "$c_reset"
+      elif (( cpu_delta > 100000000 )); then
+        # No committed vectors yet, but burning CPU → loading model / computing a batch
+        printf '  %s● working: vectors commit per-batch; CPU active (+%ds core-time in 3s) — not hung%s\n' "$c_grn" "$((cpu_delta / 10000000))" "$c_reset"
+        printf '    %s(embeddinggemma loads ~30-60s on CPU, then commits batches; let it finish)%s\n' "$c_dim" "$c_reset"
       else
-        # No movement; could be model loading (early) or stalled (late)
         local oldest_embed_age
         oldest_embed_age=$(echo "$procs" | grep 'embed' | awk -F'|' '{print $3}' | sort -nr | head -1)
-        if (( oldest_embed_age > 120 )); then
-          printf '  %s⚠ no vector progress in 3s and embed running %s — could be a slow chunk or stall.%s\n' "$c_yel" "$(human_age "$oldest_embed_age")" "$c_reset"
-          printf '    %sif stuck >10min with 0 delta, kill: powershell "Stop-Process -Id <PID>"%s\n' "$c_dim" "$c_reset"
-        else
-          printf '  %s… warming up (model load ~30-60s on CPU), no vectors yet — normal%s\n' "$c_dim" "$c_reset"
-        fi
+        printf '  %s⚠ no vector progress AND no CPU activity in 3s (embed running %s) — likely stalled.%s\n' "$c_red" "$(human_age "$oldest_embed_age")" "$c_reset"
+        printf '    %skill: powershell "Stop-Process -Id %s"  (pending chunks retried next refresh)%s\n' "$c_dim" "$epid" "$c_reset"
       fi
     else
       printf '  %s● memory process active (non-embed)%s\n' "$c_grn" "$c_reset"
