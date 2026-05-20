@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.2.2 — 2026-05-21 — Portable PATH fix (Git Bash) + memstat hardening
+
+**Fixed**
+- **PATH normalization on Git Bash.** The portable `_add_path` helper now converts Windows-style paths (`C:\Users\...\npm` with backslashes from `$APPDATA`/`$USERPROFILE`) to unix form before prepending to PATH. Previously these poisoned PATH and `qmd` resolved to a mangled, non-executable path — meaning the SessionStart hook's background `qmd update` and `/memstat`'s status query silently did nothing on a fresh install. Switched from empty `$USER` to `$USERPROFILE`. Affects `hooks/session-start.sh` and `bin/memstat.sh`.
+- **`/memstat` honesty when qmd status is unavailable.** Retries once (transient SQLite lock during concurrent `qmd update`), and if still no data, HEALTH reports "index status unknown" instead of falsely claiming "fully embedded".
+
 ## v6.2.1 — 2026-05-21 — Hook does FTS-only refresh (no surprise CPU)
 
 **Changed**

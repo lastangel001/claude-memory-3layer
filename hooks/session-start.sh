@@ -29,10 +29,22 @@ if [[ -f "$qmd_marker" ]]; then
 fi
 if [[ "$qmd_refresh_needed" == "1" ]]; then
   (
-    # Augment PATH with common Node/npm locations (Windows + Unix)
-    for p in "/c/Program Files/nodejs" "$APPDATA/npm" "/c/Users/$USER/AppData/Roaming/npm" "$HOME/.npm-global/bin" "/usr/local/bin"; do
+    # Augment PATH with common Node/npm locations (Windows + Unix).
+    # Normalize Windows paths (backslashes / C: drive) to unix form, else
+    # $APPDATA/$USERPROFILE poison PATH and qmd resolves to a mangled,
+    # non-executable path on Git Bash.
+    _add_path() {
+      local p="$1"
+      p="${p//\\//}"
+      [[ "$p" =~ ^([A-Za-z]):(.*)$ ]] && p="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"
       [[ -d "$p" ]] && PATH="$p:$PATH"
-    done
+    }
+    _add_path "/c/Program Files/nodejs"
+    _add_path "$APPDATA/npm"
+    _add_path "$USERPROFILE/AppData/Roaming/npm"
+    _add_path "$HOME/.npm-global/bin"
+    _add_path "/usr/local/bin"
+    _add_path "/opt/homebrew/bin"
     export PATH
     if command -v qmd >/dev/null 2>&1; then
       qmd update >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1 \

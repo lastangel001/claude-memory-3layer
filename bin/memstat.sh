@@ -9,10 +9,22 @@
 #   memstat.sh --watch 5  # live, custom interval
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
-# Augment PATH with common Node/npm locations (Windows + Unix)
-for p in "/c/Program Files/nodejs" "$APPDATA/npm" "/c/Users/$USER/AppData/Roaming/npm" "$HOME/.npm-global/bin" "/usr/local/bin" "/opt/homebrew/bin"; do
+# Augment PATH with common Node/npm locations (Windows + Unix).
+# Normalizes Windows paths (C:\... with backslashes) to unix form, since
+# $APPDATA/$USERPROFILE come back backslash-style in Git Bash and would
+# otherwise poison PATH (qmd resolves to a non-executable mangled path).
+_add_path() {
+  local p="$1"
+  p="${p//\\//}"  # backslashes -> forward slashes
+  [[ "$p" =~ ^([A-Za-z]):(.*)$ ]] && p="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"  # C:/x -> /c/x
   [[ -d "$p" ]] && PATH="$p:$PATH"
-done
+}
+_add_path "/c/Program Files/nodejs"
+_add_path "$APPDATA/npm"
+_add_path "$USERPROFILE/AppData/Roaming/npm"
+_add_path "$HOME/.npm-global/bin"
+_add_path "/usr/local/bin"
+_add_path "/opt/homebrew/bin"
 export PATH
 export QMD_LLAMA_GPU="${QMD_LLAMA_GPU:-none}"
 
@@ -46,8 +58,16 @@ get_procs() {
 }
 
 # --- gather: qmd index status (vectors / pending) ---
+# Retries once if the first call returns nothing (transient SQLite lock during
+# a concurrent `qmd update`).
 get_qmd_status() {
-  timeout 25 qmd status 2>/dev/null | tr -d '\r'
+  local out
+  out=$(timeout 25 qmd status 2>/dev/null | tr -d '\r')
+  if ! echo "$out" | grep -qiE 'Vectors:'; then
+    sleep 1
+    out=$(timeout 25 qmd status 2>/dev/null | tr -d '\r')
+  fi
+  printf '%s' "$out"
 }
 
 render() {
@@ -121,10 +141,12 @@ render() {
   # --- HEALTH / STALL CHECK ---
   printf '%sHEALTH%s\n' "$c_bold" "$c_reset"
   if [[ -z "$procs" ]]; then
-    if [[ "$pend" == "0" ]]; then
+    if [[ "$vec" == "?" ]]; then
+      printf '  %s? index status unknown — qmd status did not respond (retry /memstat)%s\n' "$c_yel" "$c_reset"
+    elif [[ "$pend" == "0" ]]; then
       printf '  %s✓ idle, index fully embedded%s\n' "$c_grn" "$c_reset"
     else
-      printf '  %s✓ idle (%s chunks pending — will embed on next refresh or `/memory refresh`)%s\n' "$c_grn" "$pend" "$c_reset"
+      printf '  %s✓ idle (%s chunks pending — run `/memory refresh` for fresh vectors)%s\n' "$c_grn" "$pend" "$c_reset"
     fi
   else
     # A process is running — sample vector delta to detect progress
