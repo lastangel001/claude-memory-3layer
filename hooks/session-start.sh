@@ -73,11 +73,22 @@ fi
 
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 
+# Canonical cwd for SESSION.md frontmatter — computed once, used in CWD check + base message.
+current_cwd_canonical=""
+if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
+  current_cwd_canonical="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+else
+  current_cwd_canonical="$PWD"
+fi
+
 stale_warning=""
 if [[ -f "$session_file" ]]; then
   last_updated=$(grep -oE 'last_updated:[[:space:]]*[0-9T:.Z+-]+' "$session_file" | head -n1 | sed 's/last_updated:[[:space:]]*//')
   if [[ -n "$last_updated" ]]; then
-    last_epoch=$(date -d "$last_updated" +%s 2>/dev/null || echo 0)
+    # GNU date: date -d; BSD/macOS date: date -j -f. Try both; fall back to 0.
+    last_epoch=$(date -d "$last_updated" +%s 2>/dev/null \
+      || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$last_updated" +%s 2>/dev/null \
+      || echo 0)
     now_epoch=$(date +%s)
     if [[ "$last_epoch" -gt 0 ]]; then
       age=$((now_epoch - last_epoch))
@@ -102,13 +113,6 @@ cwd_mismatch_warning=""
 if [[ -f "$session_file" ]]; then
   session_cwd=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r')
   if [[ -n "$session_cwd" ]]; then
-    # Build Windows-style canonical path for comparison (e.g. C:/dev/project).
-    current_cwd_canonical=""
-    if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-      current_cwd_canonical="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
-    else
-      current_cwd_canonical="$PWD"
-    fi
     if [[ "$session_cwd" != "$current_cwd_canonical" && "$session_cwd" != "$PWD" ]]; then
       cwd_mismatch_warning=$'\n\nCWD MISMATCH — DO NOT CONTINUE PREVIOUS SESSION: SESSION.md was written in ['"${session_cwd}"$']. Current project is ['"${current_cwd_canonical}"$']. The loaded state belongs to a DIFFERENT PROJECT. Ignore all content from SESSION.md. Create a fresh SESSION.md when substantive work begins in the current project.'
       echo "[$(date -Iseconds)] CWD mismatch: session_cwd=${session_cwd} current=${current_cwd_canonical}" \
@@ -134,10 +138,14 @@ fi
 # accidentally persisted in the previous session before they reach model context.
 # Strips all occurrences; backup preserved at SESSION.md.bak only on first pass.
 if [[ -f "$session_file" ]]; then
-  if grep -q '<private>' "$session_file" 2>/dev/null; then
+  if grep -qP '<private>|\r' "$session_file" 2>/dev/null || grep -q $'<private>\|\r' "$session_file" 2>/dev/null; then
     cp -n "$session_file" "${session_file}.bak" 2>/dev/null || true
-    sed -i 's/<private>[^<]*<\/private>//g' "$session_file" 2>/dev/null || true
-    echo "[$(date -Iseconds)] Privacy redaction applied to SESSION.md" \
+    # Strip CRLF + <private> blocks in a single portable pass (no sed -i dialect issues).
+    tmp="${session_file}.tmp.$$"
+    tr -d '\r' < "$session_file" \
+      | sed 's/<private>[^<]*<\/private>//g' \
+      > "$tmp" && mv "$tmp" "$session_file" || rm -f "$tmp"
+    echo "[$(date -Iseconds)] Privacy redaction + CRLF strip applied to SESSION.md" \
       >> "$CLAUDE_HOME/debug/hook-trace.log"
   fi
 fi
@@ -163,7 +171,11 @@ Before your first response:
 
 During work: update SESSION.md continuously (decisions with rationale, file map, last action, and refresh the last_updated marker). Do NOT batch updates to end-of-session.'
 
-full="${base}${stale_warning}${cwd_mismatch_warning}${compress_note}"
+# CWD hint: always inject canonical path so model has it ready-to-paste
+# when creating SESSION.md — eliminates the placeholder that gets forgotten.
+cwd_hint=$'\n\nCurrent project cwd (paste verbatim as \'cwd:\' value in SESSION.md YAML frontmatter): '"${current_cwd_canonical}"
+
+full="${base}${stale_warning}${cwd_mismatch_warning}${cwd_hint}${compress_note}"
 escaped=$(json_escape "$full")
 
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"

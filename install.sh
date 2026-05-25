@@ -63,13 +63,16 @@ fi
 # --- Protocol + tooling (safe to overwrite, backup if differs) ---
 
 say "Protocol + tools:"
-backup_and_install "$SRC/CLAUDE.md"                "$CLAUDE_HOME/CLAUDE.md"
-backup_and_install "$SRC/hooks/session-start.sh"   "$CLAUDE_HOME/hooks/session-start.sh"
-backup_and_install "$SRC/hooks/pre-compact.sh"     "$CLAUDE_HOME/hooks/pre-compact.sh"
-backup_and_install "$SRC/commands/recall.md"       "$CLAUDE_HOME/commands/recall.md"
-backup_and_install "$SRC/commands/codemap.md"      "$CLAUDE_HOME/commands/codemap.md"
-backup_and_install "$SRC/commands/memory.md"       "$CLAUDE_HOME/commands/memory.md"
-backup_and_install "$SRC/bin/codemap.sh"           "$CLAUDE_HOME/bin/codemap.sh"
+backup_and_install "$SRC/CLAUDE.md"                    "$CLAUDE_HOME/CLAUDE.md"
+backup_and_install "$SRC/hooks/session-start.sh"       "$CLAUDE_HOME/hooks/session-start.sh"
+backup_and_install "$SRC/hooks/pre-compact.sh"         "$CLAUDE_HOME/hooks/pre-compact.sh"
+backup_and_install "$SRC/hooks/post-tool-use.sh"       "$CLAUDE_HOME/hooks/post-tool-use.sh"
+backup_and_install "$SRC/commands/recall.md"           "$CLAUDE_HOME/commands/recall.md"
+backup_and_install "$SRC/commands/codemap.md"          "$CLAUDE_HOME/commands/codemap.md"
+backup_and_install "$SRC/commands/memory.md"           "$CLAUDE_HOME/commands/memory.md"
+backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/memstat.md"
+backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
+backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 
 if [[ $DRY_RUN -eq 0 ]]; then
   chmod +x "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh 2>/dev/null || true
@@ -97,11 +100,14 @@ if [[ ! -f "$CLAUDE_HOME/settings.json" ]]; then
   do_or_dry "cp '$SRC/settings.snippet.json' '$CLAUDE_HOME/settings.json'"
   say "  + $CLAUDE_HOME/settings.json (fresh, with hooks)"
 else
-  if grep -q '"SessionStart"' "$CLAUDE_HOME/settings.json" 2>/dev/null && \
-     grep -q '"PreCompact"'   "$CLAUDE_HOME/settings.json" 2>/dev/null; then
-    say "  = $CLAUDE_HOME/settings.json (already has SessionStart + PreCompact hooks)"
+  missing_hooks=()
+  grep -q '"SessionStart"' "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("SessionStart")
+  grep -q '"PreCompact"'   "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("PreCompact")
+  grep -q '"PostToolUse"'  "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("PostToolUse")
+  if [[ ${#missing_hooks[@]} -eq 0 ]]; then
+    say "  = $CLAUDE_HOME/settings.json (all hooks present)"
   else
-    say "  ⚠ $CLAUDE_HOME/settings.json exists but is missing one or both hooks"
+    say "  ⚠ $CLAUDE_HOME/settings.json missing: ${missing_hooks[*]}"
     say "    Merge the 'hooks' block from $SRC/settings.snippet.json manually."
     say "    Do NOT duplicate the top-level 'hooks' key — merge into existing one."
   fi
@@ -124,6 +130,49 @@ if [[ -n "$backups" ]]; then
 fi
 
 # --- Next steps ---
+
+# --- Pre-flight validation ---
+
+if [[ $DRY_RUN -eq 0 ]]; then
+  say "Validation:"
+
+  # 1. settings.json is valid JSON
+  if command -v node >/dev/null 2>&1; then
+    if node -e "JSON.parse(require('fs').readFileSync('$CLAUDE_HOME/settings.json','utf8'))" 2>/dev/null; then
+      say "  ✓ settings.json valid JSON"
+    else
+      say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
+    fi
+  elif command -v python3 >/dev/null 2>&1; then
+    if python3 -c "import json; json.load(open('$CLAUDE_HOME/settings.json'))" 2>/dev/null; then
+      say "  ✓ settings.json valid JSON"
+    else
+      say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
+    fi
+  else
+    say "  ? settings.json not validated (node/python3 not found)"
+  fi
+
+  # 2. Hook syntax check
+  for h in session-start.sh pre-compact.sh post-tool-use.sh; do
+    hf="$CLAUDE_HOME/hooks/$h"
+    if [[ -f "$hf" ]]; then
+      if bash -n "$hf" 2>/dev/null; then
+        say "  ✓ hooks/$h syntax OK"
+      else
+        say "  ✗ hooks/$h syntax error — run: bash -n $hf"
+      fi
+    fi
+  done
+
+  # 3. Hook files executable
+  for h in "$CLAUDE_HOME/hooks/"*.sh; do
+    [[ -f "$h" && ! -x "$h" ]] && say "  ✗ $(basename $h) not executable — run: chmod +x $h"
+  done
+
+  say "  Run 'bash ~/.claude/bin/doctor.sh' anytime for a full health check."
+  say ""
+fi
 
 say "=== Done ($mode) ==="
 say ""

@@ -11,6 +11,12 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] SESSION.md compression protocol (PreCompact instructs caveman-style prose writing)
 - [x] SESSION compression on/off toggle (`CLAUDE_SESSION_COMPRESS` env var + `~/.claude/.session-compress-disabled` flag file)
 - [x] Fix hardcoded user paths in hooks and commands (all `/c/Users/greev/` → `$CLAUDE_HOME` / `~/.claude/`)
+- [x] PostToolUse selective auto-capture (git commit, CLAUDE.md, .claude-docs/ writes)
+- [x] SESSION.md `cwd:` auto-inject — hook injects canonical cwd into context as ready-to-paste value
+- [x] BSD `date -j` fallback for macOS (staleness check now portable)
+- [x] CRLF guard before privacy redaction (`tr -d '\r'` + sed in single portable pass)
+- [x] `bin/doctor.sh` post-install health check (hooks, settings.json, IDENTITY.md, SESSION.md, optional tools)
+- [x] Pre-flight validation in `install.sh` (JSON validity, hook syntax, executable bits)
 
 ---
 
