@@ -1,5 +1,18 @@
 # Changelog
 
+## v6.3.0 — 2026-05-25 — Privacy redaction, CWD mismatch, compression toggle + bugfixes
+
+**Added**
+- **Privacy redaction via `<private>` tags.** SessionStart hook strips `<private>...</private>` blocks from SESSION.md in-place before injecting context (backup preserved at `SESSION.md.bak`). PreCompact instructs model to strip tags before writing. Defense-in-depth: tagged content removed at session boundary even if model wrote it.
+- **CWD mismatch detection.** SessionStart reads `cwd:` from SESSION.md YAML frontmatter. If it doesn't match current project path, injects a hard reset warning — prevents agent from silently continuing the wrong project's task after switching directories. SESSION.md template updated to include `cwd:` field.
+- **SESSION.md compression protocol.** PreCompact instructs model to write SESSION.md prose in compressed caveman notation (drop articles/filler, fragments OK, code/paths exact). Reduces context-window cost on every SESSION.md reload.
+- **Compression on/off toggle.** Flag file `~/.claude/.session-compress-disabled` (or env var `CLAUDE_SESSION_COMPRESS=0`) disables compression. Both hooks read flag on every fire — no restart needed. Documented in CLAUDE.md Rule 4.
+- **IDEAS.md backlog.** Prioritised enhancement backlog: 5 new sections covering hook reliability, concurrency, install/uninstall, SESSION.md lifecycle, and testing/CI. 13 new items with priority×effort ratings and implementation notes.
+
+**Fixed**
+- **Hardcoded user paths removed.** `hooks/session-start.sh` had `/c/Users/greev/.claude/` hardcoded in two places (debug log line + SESSION.md path). Broke the system for any user other than the original author. Both replaced with `$CLAUDE_HOME`. `CLAUDE_HOME` assignment moved before first use.
+- **Hardcoded paths in command files.** `commands/codemap.md`, `commands/memstat.md`: `/c/Users/greev/.claude/bin/` → `~/.claude/bin/`. `commands/recall.md`, `commands/memory.md`: hardcoded npm PATH examples → `$APPDATA/npm` with explanatory note.
+
 ## v6.2.3 — 2026-05-21 — memstat process detection actually works
 
 **Fixed**

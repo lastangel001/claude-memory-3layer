@@ -9,6 +9,8 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Privacy redaction via `<private>` tags (SessionStart hook strips in-place)
 - [x] CWD mismatch detection in SESSION.md frontmatter (prevents cross-project context bleed)
 - [x] SESSION.md compression protocol (PreCompact instructs caveman-style prose writing)
+- [x] SESSION compression on/off toggle (`CLAUDE_SESSION_COMPRESS` env var + `~/.claude/.session-compress-disabled` flag file)
+- [x] Fix hardcoded user paths in hooks and commands (all `/c/Users/greev/` → `$CLAUDE_HOME` / `~/.claude/`)
 
 ---
 
@@ -129,6 +131,181 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 **Why:** IDENTITY.md is the most irreplaceable file — machine wipe = total loss. Users who work across multiple machines have no sync path today.
 
 **Tradeoff:** Significant scope. Must be opt-in, encrypted, and auditable. Out of scope for core package — better as a separate companion tool.
+
+---
+
+---
+
+## Hook reliability
+
+### H/M — File locking for SESSION.md (parallel worktrees)
+
+**What:** Guard SESSION.md writes with a per-slug lockfile so two parallel agents in the same project don't clobber each other's output.
+
+**Why:** Two worktrees or two Claude Code windows in the same project share one SESSION.md. Both read, both write → last writer wins, first writer's data silently lost.
+
+**How:** Wrap hook's file-touch ops in `flock "$session_file.lock" -c "..."` (Linux/Windows Git Bash). On macOS `flock` requires `brew install util-linux` — document as known limitation and fall back to a temp-file rename pattern (`write to .SESSION.tmp → mv -f`). Alternatively: per-worktree SESSION.md suffix derived from `git worktree list` branch name, so each worktree gets its own file.
+
+**Risk:** `flock` not available everywhere. Atomic rename (`mv -f`) avoids the dependency but doesn't prevent concurrent reads. Document known limitation in INSTALL.md if full locking not implemented.
+
+---
+
+### M/S — Validate JSON output of session-start.sh
+
+**What:** Before printing hookSpecificOutput JSON, pipe it through a quick validity check.
+
+**Why:** Any unescaped character in `json_escape()` (rare but possible with exotic Unicode or malformed session content) produces silent broken JSON. Claude Code silently skips the hook → model gets no memory context, user sees no error.
+
+**How:** Add after `escaped=` assignment:
+```bash
+printf '%s' "$escaped" | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))" 2>/dev/null \
+  || { echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"MEMORY HOOK ERROR: JSON escaped output failed validation. Check hook-trace.log."}}'; exit 0; }
+```
+Falls back to minimal safe output on failure; never blocks session start.
+
+---
+
+### M/S — BSD `date` fallback for macOS
+
+**What:** Replace `date -d "$last_updated"` with portable date parsing that works on both GNU (Linux/Windows Git Bash) and BSD (macOS).
+
+**Why:** `date -d` is GNU-only. On macOS/BSD it silently returns epoch 0 → staleness check never fires → stale SESSION.md loaded without warning every time.
+
+**How:**
+```bash
+last_epoch=$(date -d "$last_updated" +%s 2>/dev/null \
+  || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$last_updated" +%s 2>/dev/null \
+  || echo 0)
+```
+Already noted in INSTALL.md troubleshooting but not fixed in the hook.
+
+---
+
+### M/S — CRLF guard before `sed` privacy redaction
+
+**What:** Strip `\r` from SESSION.md before running `sed -i` privacy redaction.
+
+**Why:** Claude Code on Windows writes SESSION.md with `\r\n` line endings. The regex `<private>[^<]*<\/private>` spans only single lines — if the content between tags has a `\r`, the pattern silently misses it.
+
+**How:** Replace the redaction block with:
+```bash
+sed -i 's/\r//g; s/<private>[^<]*<\/private>//g' "$session_file" 2>/dev/null || true
+```
+Two expressions in one `sed` pass: normalize CRLF first, then strip tags.
+
+---
+
+### M/S — Race condition on `.qmd-last-refresh` marker
+
+**What:** Make the qmd debounce marker write atomic to prevent two parallel SessionStart hooks from both triggering `qmd update`.
+
+**Why:** Two Claude Code windows open simultaneously each fire SessionStart within milliseconds. Both read marker → both see stale → both spawn background `qmd update` processes. Benign but wastes CPU and can cause index corruption on slow filesystems.
+
+**How:** Replace `cat marker` + `date > marker` with an atomic check-and-set:
+```bash
+( flock -n 9 && cat "$qmd_marker" ... && date +%s > "$qmd_marker" ) 9>"$qmd_marker.lock"
+```
+Or simpler: use `mkdir` as atomic lock (`mkdir "$qmd_marker.lock" 2>/dev/null && ...`).
+
+---
+
+## Install / Uninstall
+
+### M/S — Uninstall instructions and `bin/uninstall.sh`
+
+**What:** Document and script complete removal: hook files from `~/.claude/hooks/`, entries from `settings.json`, slash command files from `~/.claude/commands/`, bin scripts. Restore default Claude Code memory behavior.
+
+**Why:** INSTALL.md covers upgrade/rollback but has zero guidance on "I want to remove this entirely." Users who switch systems or tools are left guessing which files to delete.
+
+**How:** `bin/uninstall.sh` mirrors `install.sh`: removes known files, strips the `hooks` block from settings.json using `jq` or a sed/Python fallback. Adds "Uninstall" section to INSTALL.md. Default Claude memory is restored automatically once hooks block is removed.
+
+---
+
+### M/S — Pre-flight validation at end of install.sh
+
+**What:** After copying files, `install.sh` should run a smoke-check: valid JSON in settings.json, hook scripts are executable, `bash -n` syntax check on both hooks.
+
+**Why:** Install is manual copy + JSON merge. Easy to introduce a syntax error in settings.json or forget `chmod +x`. Currently there's no feedback — the failure only surfaces at next Claude Code session start with no error message.
+
+**How:** Add at end of install.sh:
+```bash
+node -e "JSON.parse(require('fs').readFileSync('$CLAUDE_HOME/settings.json','utf8'))" \
+  && echo "✓ settings.json valid" || echo "✗ settings.json invalid — fix before starting Claude"
+bash -n "$CLAUDE_HOME/hooks/session-start.sh" && echo "✓ session-start.sh syntax OK"
+bash -n "$CLAUDE_HOME/hooks/pre-compact.sh"   && echo "✓ pre-compact.sh syntax OK"
+```
+
+---
+
+### M/S — `bin/doctor.sh` post-install smoke test
+
+**What:** A standalone script users can run anytime to verify the install is healthy. Analogous to `cavemem doctor`.
+
+**Why:** No current way to verify install beyond "start a session and hope the hook fires". Users can't distinguish "hooks not firing" from "hook firing but Claude ignoring it".
+
+**How:** `bin/doctor.sh` checks and prints ✓/✗ for each:
+- hooks registered in settings.json
+- hook files present + executable at registered path
+- `bash -n` syntax check
+- IDENTITY.md present
+- qmd on PATH (if retrieval tools installed)
+- current-project SESSION.md parseable (if exists)
+
+---
+
+### M/M — Programmatic settings.json merge
+
+**What:** Replace "merge by hand" fallback with an automated merge script.
+
+**Why:** Current install.sh detects conflict and tells user to merge manually. In practice users copy-paste wrong, break JSON, and get cryptic Claude Code errors with no hint that hooks are the cause.
+
+**How:** Add `bin/merge-settings.sh` that uses `jq` if available, else falls back to a 10-line Node.js/Python merge. Merge strategy: deep-merge `hooks` arrays (append if no duplicate command), keep user's other keys untouched. Validate output JSON before writing.
+
+---
+
+## SESSION.md lifecycle
+
+### M/M — `/session-end` slash command (distillation enforcement)
+
+**What:** Add a `/session-end` slash command that executes the distillation + wipe ritual.
+
+**Why:** CLAUDE.md says "on task done, wipe SESSION.md to template". In practice the model forgets or user doesn't say "task done" explicitly. High-signal work gets lost; SESSION.md bloats across tasks.
+
+**How:** `commands/session-end.md` slash command: (1) distil key decisions/gotchas to their permanent layers (IDENTITY.md / gotchas.md / project.md), (2) confirm with user what was promoted, (3) wipe SESSION.md to blank template with fresh `last_updated` and current `cwd:`. Optionally hook into Claude Code's `Stop` hook if supported — emit reminder if SESSION.md `last_updated` is within the last hour (active session just ended).
+
+---
+
+### M/S — Enforce `last_updated` presence at session start
+
+**What:** Upgrade the "no `last_updated` marker" warning from a passive note to an actionable instruction.
+
+**Why:** Staleness detection only works if the model writes `last_updated:` on every SESSION.md update. The existing fallback message says "treat with suspicion" — the model may acknowledge it and continue without fixing the file. Future sessions stay broken.
+
+**How:** Change the fallback branch in `session-start.sh`:
+```
+NOTE: SESSION.md exists but has no last_updated marker.
+→ REQUIRED FIRST ACTION: add 'last_updated: <current UTC ISO>' to YAML frontmatter NOW, before any other response. Do not skip this.
+```
+Strong imperative wording rather than hedged advisory.
+
+---
+
+## Testing & CI
+
+### M/M — bats-core test suite for hooks (developer-side)
+
+**What:** Add `tests/` directory with [bats-core](https://github.com/bats-core/bats-core) tests covering the two hook scripts.
+
+**Why:** Hooks are the critical path — silent breakage = memory loss. No tests exist. Any edit to session-start.sh can break staleness detection, CWD check, privacy redaction, or compression flag without anyone noticing until a user reports lost context.
+
+**Important:** Tests run **from the repo** against the repo's hook files (not `~/.claude/hooks/`). Post-install validation is handled separately by `bin/doctor.sh`. CI (GitHub Actions) runs `bats tests/` on push.
+
+**Minimum scope for session-start.sh:**
+- Staleness check fires when `last_updated` >24h
+- CWD mismatch detected when `cwd:` doesn't match `$PWD`
+- Privacy redaction strips `<private>` blocks
+- Compression flag respected (env var + file)
+- JSON output is valid (`node -e "JSON.parse(...)"`)
 
 ---
 
