@@ -1,5 +1,21 @@
 # Changelog
 
+## v6.4.0 — 2026-05-25 — PostToolUse capture, cwd auto-inject, portability fixes, doctor.sh
+
+**Added**
+- **PostToolUse selective auto-capture** (`hooks/post-tool-use.sh`). New hook captures three high-signal patterns and appends one-line entries to SESSION.md automatically: `Bash` with `git commit` (records commit message), `Write` to any `**/CLAUDE.md` (notes L1a update), `Write` to `**/.claude-docs/*.md` (notes L1b update). Everything else silently ignored — explicit-promotion philosophy preserved. JSON parsed via python3 → node → grep fallback chain; silent-fail on all errors.
+- **SESSION.md `cwd:` auto-inject.** SessionStart hook now computes canonical cwd once and injects it into every `additionalContext` as a ready-to-paste value (`"Current project cwd: C:/dev/project"`). Eliminates the placeholder that the model previously had to fill from memory and often forgot.
+- **`bin/doctor.sh` post-install health check.** Standalone script checking: hook files present + executable + syntax-clean; `settings.json` valid JSON + all three hooks registered; `IDENTITY.md` present and not placeholder; current-project `SESSION.md` has `last_updated` + `cwd` fields; optional tools (qmd, ctags, rg, node, python3). Outputs ✓/✗/? per check; exits 1 on any critical failure (CI-friendly).
+
+**Fixed**
+- **BSD `date` portability.** Staleness check used `date -d` (GNU-only). On macOS/BSD it silently returned epoch 0 — staleness detection never fired. Now tries `date -d` first, falls back to `date -j -f "%Y-%m-%dT%H:%M:%SZ"` for BSD.
+- **CRLF in privacy redaction.** `sed -i` pattern could silently miss `<private>` blocks if SESSION.md had Windows `\r\n` line endings. Replaced with portable pipeline: `tr -d '\r' | sed 's/...'//g' > tmp && mv` — single pass, no `-i` dialect issues, handles CRLF on all platforms.
+
+**Improved**
+- `install.sh` now installs `post-tool-use.sh`, `memstat.md`, `bin/doctor.sh`. Missing-hooks check covers PostToolUse. Pre-flight validation added at end of install: JSON validity of `settings.json`, `bash -n` syntax check for all hooks, executable bit check.
+- `settings.snippet.json` updated with PostToolUse hook registration.
+- IDEAS.md: 7 newly shipped items marked `[x]`.
+
 ## v6.3.0 — 2026-05-25 — Privacy redaction, CWD mismatch, compression toggle + bugfixes
 
 **Added**
