@@ -22,28 +22,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ## Backlog
 
-### H/S — PostToolUse selective auto-capture
-
-**What:** Add a `PostToolUse` hook that writes a one-line entry to SESSION.md when specific high-signal events occur: `Write` on a new file, `Bash` with `git commit`, changes to CLAUDE.md.
-
-**Why:** These events are always worth capturing but easily forgotten mid-session. Auto-capture only these patterns keeps explicit-promotion philosophy intact while preventing missed gotchas.
-
-**How:** Hook reads JSON from stdin, pattern-matches on `toolName` + content, appends to `# Decisions` or `# File map` in SESSION.md with timestamp.
-
-**Risk:** Hook must be idempotent and silent-fail. Regex patterns need careful tuning to avoid false positives.
-
----
-
-### H/S — SESSION.md `cwd:` auto-inject on creation
-
-**What:** When the model creates a fresh SESSION.md, the `cwd:` frontmatter field should be pre-filled by the SessionStart hook output rather than left as a placeholder.
-
-**Why:** Currently the model must fill `cwd:` manually. If it forgets, the staleness check gets no signal. Hook already knows the cwd at fire time.
-
-**How:** In `session-start.sh`, include `current_cwd_canonical` in `additionalContext` so the model has it as a ready-to-paste value. Alternatively, have the hook create SESSION.md skeleton if it doesn't exist (with `cwd:` pre-filled).
-
----
-
 ### H/M — MCP wrapper for `/recall`
 
 **What:** Wrap the BM25+GGUF search from `qmd` as a minimal MCP server with two tools:
@@ -140,8 +118,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ---
 
----
-
 ## Hook reliability
 
 ### H/M — File locking for SESSION.md (parallel worktrees)
@@ -171,36 +147,6 @@ Falls back to minimal safe output on failure; never blocks session start.
 
 ---
 
-### M/S — BSD `date` fallback for macOS
-
-**What:** Replace `date -d "$last_updated"` with portable date parsing that works on both GNU (Linux/Windows Git Bash) and BSD (macOS).
-
-**Why:** `date -d` is GNU-only. On macOS/BSD it silently returns epoch 0 → staleness check never fires → stale SESSION.md loaded without warning every time.
-
-**How:**
-```bash
-last_epoch=$(date -d "$last_updated" +%s 2>/dev/null \
-  || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$last_updated" +%s 2>/dev/null \
-  || echo 0)
-```
-Already noted in INSTALL.md troubleshooting but not fixed in the hook.
-
----
-
-### M/S — CRLF guard before `sed` privacy redaction
-
-**What:** Strip `\r` from SESSION.md before running `sed -i` privacy redaction.
-
-**Why:** Claude Code on Windows writes SESSION.md with `\r\n` line endings. The regex `<private>[^<]*<\/private>` spans only single lines — if the content between tags has a `\r`, the pattern silently misses it.
-
-**How:** Replace the redaction block with:
-```bash
-sed -i 's/\r//g; s/<private>[^<]*<\/private>//g' "$session_file" 2>/dev/null || true
-```
-Two expressions in one `sed` pass: normalize CRLF first, then strip tags.
-
----
-
 ### M/S — Race condition on `.qmd-last-refresh` marker
 
 **What:** Make the qmd debounce marker write atomic to prevent two parallel SessionStart hooks from both triggering `qmd update`.
@@ -224,38 +170,6 @@ Or simpler: use `mkdir` as atomic lock (`mkdir "$qmd_marker.lock" 2>/dev/null &&
 **Why:** INSTALL.md covers upgrade/rollback but has zero guidance on "I want to remove this entirely." Users who switch systems or tools are left guessing which files to delete.
 
 **How:** `bin/uninstall.sh` mirrors `install.sh`: removes known files, strips the `hooks` block from settings.json using `jq` or a sed/Python fallback. Adds "Uninstall" section to INSTALL.md. Default Claude memory is restored automatically once hooks block is removed.
-
----
-
-### M/S — Pre-flight validation at end of install.sh
-
-**What:** After copying files, `install.sh` should run a smoke-check: valid JSON in settings.json, hook scripts are executable, `bash -n` syntax check on both hooks.
-
-**Why:** Install is manual copy + JSON merge. Easy to introduce a syntax error in settings.json or forget `chmod +x`. Currently there's no feedback — the failure only surfaces at next Claude Code session start with no error message.
-
-**How:** Add at end of install.sh:
-```bash
-node -e "JSON.parse(require('fs').readFileSync('$CLAUDE_HOME/settings.json','utf8'))" \
-  && echo "✓ settings.json valid" || echo "✗ settings.json invalid — fix before starting Claude"
-bash -n "$CLAUDE_HOME/hooks/session-start.sh" && echo "✓ session-start.sh syntax OK"
-bash -n "$CLAUDE_HOME/hooks/pre-compact.sh"   && echo "✓ pre-compact.sh syntax OK"
-```
-
----
-
-### M/S — `bin/doctor.sh` post-install smoke test
-
-**What:** A standalone script users can run anytime to verify the install is healthy. Analogous to `cavemem doctor`.
-
-**Why:** No current way to verify install beyond "start a session and hope the hook fires". Users can't distinguish "hooks not firing" from "hook firing but Claude ignoring it".
-
-**How:** `bin/doctor.sh` checks and prints ✓/✗ for each:
-- hooks registered in settings.json
-- hook files present + executable at registered path
-- `bash -n` syntax check
-- IDENTITY.md present
-- qmd on PATH (if retrieval tools installed)
-- current-project SESSION.md parseable (if exists)
 
 ---
 
