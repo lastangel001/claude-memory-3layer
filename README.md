@@ -62,8 +62,36 @@ Default mode is **explicit-promotion** — cross-session memory only when the us
 
 ## Hooks (enforce discipline)
 
-- **SessionStart** — injects protocol reminder, detects stale `SESSION.md` (>24h since last update → forces explicit *"continue or reset?"* with user). Also kicks background `qmd update + embed` debounced 6h.
-- **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. `SESSION.md` is the only artifact that survives compaction with full fidelity.
+- **SessionStart** — injects protocol reminder + three active checks:
+  - *Staleness* — `SESSION.md` >24h old → forces explicit *"continue or reset?"* with user
+  - *CWD mismatch* — reads `cwd:` from `SESSION.md` frontmatter; if it doesn't match current project directory, injects a hard reset warning so the agent doesn't continue the wrong task silently
+  - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`)
+  - Also kicks background `qmd update` debounced 6h
+- **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
+
+### SESSION.md compression
+
+By default, `SESSION.md` is written in compressed caveman notation (drop articles/filler, fragments OK, code/paths exact). SESSION is read by agents, not humans — terseness reduces context cost on every reload and compact.
+
+**Toggle:**
+
+```bash
+touch ~/.claude/.session-compress-disabled   # disable permanently
+rm ~/.claude/.session-compress-disabled      # re-enable
+CLAUDE_SESSION_COMPRESS=0 claude             # disable for one session
+```
+
+Both hooks read the flag on every fire — no restart needed. When disabled, the model is instructed to write prose naturally.
+
+### Privacy: `<private>` tags
+
+Wrap transient secrets inside `<private>...</private>` in any message or note:
+
+```
+OAuth token was <private>sk-ant-abc123</private> — stored in env ANTHROPIC_API_KEY.
+```
+
+The SessionStart hook strips all `<private>` blocks from `SESSION.md` in-place before the content reaches model context. PreCompact instructs the model to strip tags before writing. Defense-in-depth: even if tagged content slips through, it is removed at the next session boundary. **Never write raw secrets to memory files** — write the env-var name or path instead.
 
 ## What's deliberately NOT in it
 
@@ -104,11 +132,12 @@ memory/IDENTITY.md              — L0 template
 templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
-hooks/session-start.sh          — staleness check + protocol injection + qmd auto-refresh
-hooks/pre-compact.sh            — pre-compact flush reminder
+hooks/session-start.sh          — staleness + CWD mismatch + privacy redaction + compression flag + qmd auto-refresh
+hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
 commands/{recall,codemap,memory}.md — slash command definitions
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 settings.snippet.json           — hooks block for ~/.claude/settings.json
+IDEAS.md                        — prioritised backlog of future enhancements
 ```
 
 ## License
