@@ -74,7 +74,9 @@ Default mode is **explicit-promotion** — cross-session memory only when the us
   - `Write` to `**/CLAUDE.md` → notes L1a in-repo entry update
   - `Write` to `**/.claude-docs/*.md` → notes L1b doc update
 
-  Everything else is silently ignored — explicit-promotion philosophy preserved for all other events.
+  Everything else is silently ignored — explicit-promotion philosophy preserved for all other events. JSON parsed via `python3 → node → jq → grep` fallback chain; run `bin/doctor.sh` to see which parser is active on your system.
+
+All three hooks run in `set -euo pipefail` strict mode. Any unguarded failure is logged to `~/.claude/debug/hook-trace.log` with `rc` + line number, and a fallback message is emitted — hooks never block session start or tool execution.
 
 ### SESSION.md compression
 

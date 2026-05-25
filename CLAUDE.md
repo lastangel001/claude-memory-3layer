@@ -301,3 +301,11 @@ The SessionStart hook strips all `<private>...</private>` blocks from SESSION.md
 ## Recovery
 
 Post-compact / post-restart: first tool calls are `Read ~/.claude/memory/IDENTITY.md` + `Read <project>/memory/SESSION.md` + `Read <project>/memory/project.md` (if exists). The repo's own `CLAUDE.md` is auto-loaded — verify it's in your context. The hook normally injects this reminder, but if not, do it anyway.
+
+---
+
+## Doc index (when working on the claude-memory-3layer repo itself)
+
+| Task | Read |
+|---|---|
+| Making a commit — what to update | `.claude-docs/dev-workflow.md` |

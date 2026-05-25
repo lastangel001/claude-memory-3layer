@@ -3,9 +3,21 @@
 # NOTE: PreCompact schema does NOT accept hookSpecificOutput.additionalContext
 # (unlike SessionStart/UserPromptSubmit). Use top-level `systemMessage` instead.
 
+set -euo pipefail
+
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
-mkdir -p "$CLAUDE_HOME/debug" 2>/dev/null
-echo "[$(date -Iseconds)] PreCompact fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log"
+mkdir -p "$CLAUDE_HOME/debug" 2>/dev/null || true
+echo "[$(date -Iseconds)] PreCompact fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log" || true
+
+# ERR trap — on failure emit a minimal fallback systemMessage rather than silence.
+_hook_error() {
+  local rc=$1 lineno=$2
+  echo "[$(date -Iseconds)] PreCompact ERROR rc=${rc} line=${lineno}" \
+    >> "$CLAUDE_HOME/debug/hook-trace.log" 2>/dev/null || :
+  printf '{"systemMessage":"MEMORY HOOK ERROR: pre-compact.sh failed at line %s. Check ~/.claude/debug/hook-trace.log. Flush SESSION.md manually before compaction."}\n' "$lineno"
+  exit 0
+}
+trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
 
 # --- SESSION compression flag ---
 # Priority: env var CLAUDE_SESSION_COMPRESS → flag file → default on.

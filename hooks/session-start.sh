@@ -2,10 +2,24 @@
 # SessionStart hook — injects memory protocol reminder + staleness check.
 # Output: JSON with hookSpecificOutput.additionalContext.
 
+set -euo pipefail
+
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 
-echo "[$(date -Iseconds)] SessionStart fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log"
-mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/logs" 2>/dev/null
+# Setup dirs before anything else (log echo depends on debug/ existing).
+mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/logs" 2>/dev/null || true
+echo "[$(date -Iseconds)] SessionStart fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log" || true
+
+# ERR trap — on any unguarded failure, emit fallback JSON and exit cleanly.
+# Hook MUST NOT block session start; fallback JSON warns the user instead of silence.
+_hook_error() {
+  local rc=$1 lineno=$2
+  echo "[$(date -Iseconds)] SessionStart ERROR rc=${rc} line=${lineno}" \
+    >> "$CLAUDE_HOME/debug/hook-trace.log" 2>/dev/null || :
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"MEMORY HOOK ERROR: session-start.sh failed at line %s. Check ~/.claude/debug/hook-trace.log."}}\n' "$lineno"
+  exit 0
+}
+trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
 
 # --- qmd FTS index auto-refresh (debounced, background) ---
 # Runs ONLY the lightweight `qmd update` (BM25/FTS rebuild) in background if
@@ -61,7 +75,7 @@ cwd_unix="$PWD"
 if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
   drive="${BASH_REMATCH[1]^^}"
   rest="${BASH_REMATCH[2]}"
-  # Match Claude Code's slug convention: drive + "--" + path with "/" -> "-"
+  # Match Claude Code's slug convention: drive + "--" + path with "/" -> "-" and "_" -> "-"
   slug="${drive}--${rest//\//-}"
 elif [[ "$cwd_unix" =~ ^/([a-zA-Z])/?$ ]]; then
   drive="${BASH_REMATCH[1]^^}"
@@ -70,6 +84,7 @@ else
   slug="${cwd_unix//\//-}"
   slug="${slug#-}"
 fi
+slug="${slug//_/-}"
 
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 
@@ -83,7 +98,7 @@ fi
 
 stale_warning=""
 if [[ -f "$session_file" ]]; then
-  last_updated=$(grep -oE 'last_updated:[[:space:]]*[0-9T:.Z+-]+' "$session_file" | head -n1 | sed 's/last_updated:[[:space:]]*//')
+  last_updated=$(grep -oE 'last_updated:[[:space:]]*[0-9T:.Z+-]+' "$session_file" | head -n1 | sed 's/last_updated:[[:space:]]*//' || true)
   if [[ -n "$last_updated" ]]; then
     # GNU date: date -d; BSD/macOS date: date -j -f. Try both; fall back to 0.
     last_epoch=$(date -d "$last_updated" +%s 2>/dev/null \
@@ -111,7 +126,7 @@ fi
 # treat SESSION.md as empty and start fresh.
 cwd_mismatch_warning=""
 if [[ -f "$session_file" ]]; then
-  session_cwd=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r')
+  session_cwd=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
   if [[ -n "$session_cwd" ]]; then
     if [[ "$session_cwd" != "$current_cwd_canonical" && "$session_cwd" != "$PWD" ]]; then
       cwd_mismatch_warning=$'\n\nCWD MISMATCH — DO NOT CONTINUE PREVIOUS SESSION: SESSION.md was written in ['"${session_cwd}"$']. Current project is ['"${current_cwd_canonical}"$']. The loaded state belongs to a DIFFERENT PROJECT. Ignore all content from SESSION.md. Create a fresh SESSION.md when substantive work begins in the current project.'

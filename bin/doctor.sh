@@ -104,6 +104,7 @@ elif [[ "$cwd_unix" =~ ^/([a-zA-Z])/?$ ]]; then
 else
   slug="${cwd_unix//\//-}"; slug="${slug#-}"
 fi
+slug="${slug//_/-}"
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 if [[ ! -f "$session_file" ]]; then
   warn "No SESSION.md for current project (normal for new projects)"
@@ -129,11 +130,24 @@ say ""
 # 5. Optional retrieval tools
 # ─────────────────────────────────────────────
 say "Optional tools (needed for /recall and /codemap):"
-command -v qmd     >/dev/null 2>&1 && ok "qmd on PATH"     || warn "qmd not found — /recall unavailable (see INSTALL.md)"
-command -v ctags   >/dev/null 2>&1 && ok "ctags on PATH"   || warn "ctags not found — /codemap unavailable"
-command -v rg      >/dev/null 2>&1 && ok "rg on PATH"      || warn "rg (ripgrep) not found — /codemap callers/callees unavailable"
-command -v node    >/dev/null 2>&1 && ok "node on PATH"    || warn "node not found — PostToolUse hook JSON parsing will use grep fallback"
-command -v python3 >/dev/null 2>&1 && ok "python3 on PATH" || warn "python3 not found — PostToolUse hook JSON parsing will use grep fallback"
+command -v qmd   >/dev/null 2>&1 && ok "qmd on PATH"   || warn "qmd not found — /recall unavailable (see INSTALL.md)"
+command -v ctags >/dev/null 2>&1 && ok "ctags on PATH" || warn "ctags not found — /codemap unavailable"
+command -v rg    >/dev/null 2>&1 && ok "rg on PATH"    || warn "rg (ripgrep) not found — /codemap callers/callees unavailable"
+say ""
+
+# ─────────────────────────────────────────────
+# 6. JSON parsers for PostToolUse hook
+# ─────────────────────────────────────────────
+say "JSON parsers (PostToolUse hook — python3 > node > jq > grep):"
+_json_parser=""
+command -v python3 >/dev/null 2>&1 && { ok "python3 on PATH"; _json_parser="${_json_parser:-python3}"; } || true
+command -v node    >/dev/null 2>&1 && { ok "node on PATH";    _json_parser="${_json_parser:-node}";    } || true
+command -v jq      >/dev/null 2>&1 && { ok "jq on PATH";      _json_parser="${_json_parser:-jq}";      } || true
+if [[ -n "$_json_parser" ]]; then
+  ok "PostToolUse will use: $_json_parser (robust JSON parsing)"
+else
+  fail "No JSON parser found (python3/node/jq) — grep fallback only; auto-capture may silently lose events on multi-line or escaped-quote JSON. Install any one."
+fi
 say ""
 
 # ─────────────────────────────────────────────

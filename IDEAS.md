@@ -17,6 +17,9 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] CRLF guard before privacy redaction (`tr -d '\r'` + sed in single portable pass)
 - [x] `bin/doctor.sh` post-install health check (hooks, settings.json, IDENTITY.md, SESSION.md, optional tools)
 - [x] Pre-flight validation in `install.sh` (JSON validity, hook syntax, executable bits)
+- [x] `set -euo pipefail` + ERR traps in all hooks (strict mode; fallback JSON on error; never blocks session start)
+- [x] Robust JSON parsing in `post-tool-use.sh` — `jq` fallback added; `\x01` separator (bash-safe); python3 `-c` fix (heredoc conflict); `doctor.sh` section 6 reports active parser
+- [x] Slug `_` → `-` normalization in all slug computations (matches Claude Code's actual slug formula)
 
 ---
 
@@ -212,7 +215,7 @@ Strong imperative wording rather than hedged advisory.
 
 ## Testing & CI
 
-### M/M — bats-core test suite for hooks (developer-side)
+### H/M — bats-core test suite for hooks (developer-side)
 
 **What:** Add `tests/` directory with [bats-core](https://github.com/bats-core/bats-core) tests covering the two hook scripts.
 
@@ -226,6 +229,56 @@ Strong imperative wording rather than hedged advisory.
 - Privacy redaction strips `<private>` blocks
 - Compression flag respected (env var + file)
 - JSON output is valid (`node -e "JSON.parse(...)"`)
+
+**Priority bumped 2026-05-25:** every new H/S item below (set -e discipline, JSON parsing robustness, quoting fixes) is exactly the class of bug a test suite catches. Tests are now the highest-leverage missing infrastructure piece.
+
+---
+
+## Hook robustness (added 2026-05-25)
+
+### M/S — DRY helper for slug + cwd canonical computation
+
+**What:** Same slug/canonicalize logic is duplicated in `hooks/session-start.sh`, `hooks/post-tool-use.sh`, `bin/doctor.sh`. Extract to `bin/lib/slug.sh` sourceable by all consumers.
+
+**Why:** Drift risk is real and already bit us: Claude Code converts `_` to `-` in slugs (e.g., `llm_projects` → `llm-projects`), causing all hooks to look up SESSION.md at the wrong path and silently miss the file. Fixed in v6.5.0 by adding `slug="${slug//_/-}"` to all three files, but the divergence is a symptom of no single source of truth.
+
+**Effort:** Pure refactor after the hotfix lands. Add a bats test that pins the slug formula against Claude Code's actual project directories.
+
+---
+
+### M/S — Quote `$APPDATA`/`$USERPROFILE` PATH augmentation
+
+**What:** `hooks/session-start.sh:43-44` and `bin/memstat.sh:23-24` prepend `$APPDATA` paths to `PATH` without bullet-proof quoting around the variable expansion at every step.
+
+**Why:** Windows usernames with spaces (`John Doe`) → PATH splits at space → tool lookup fails. Common on locale-EN-Intl Windows installs and corporate AD environments.
+
+**How:** Audit every PATH mutation; ensure both the variable and the resulting PATH entry are quoted. Add a doctor.sh check that flags suspicious PATH entries with embedded spaces.
+
+---
+
+### M/S — Unquoted variable expansion in `bin/codemap.sh` awk/grep patterns
+
+**What:** Variables like `$lineno` and `$file` used in awk/grep pipelines at `bin/codemap.sh:34, 50, 86` without consistent quoting. File paths with spaces break silently.
+
+**Why:** Reverse-engineering work on non-trivial trees (multi-protocol projects, monorepos with vendored deps) regularly hits paths with spaces. Silent failure shows as "symbol not found" with no hint that the path is the cause.
+
+---
+
+### M/S — Windows-specific section in INSTALL.md
+
+**What:** Current INSTALL.md mentions Git Bash requirement but doesn't document Windows-specific traps: Git Bash backslash conversion in env vars, PATH precedence (MSVC vs Git Bash), space-in-username, MSYS2/Cygwin coexistence.
+
+**Why:** Users hit silent tool failures (qmd not found, ctags missing, PATH munged) with no diagnostic path. `bin/doctor.sh` catches some symptoms; docs catch none. Windows is the largest user-friction surface today.
+
+---
+
+### L/S — Harden `migrate.sh` regex for legacy HTML-comment marker
+
+**What:** `migrate.sh:46` regex `^\<!--[[:space:]]*last_updated:[[:space:]]*([0-9T:.Z+-]+)[[:space:]]*--\>` doesn't handle extra spaces before `<!--` or trailing content after `-->`. `[[:space:]]` includes tabs (may be intentional but undocumented).
+
+**Why:** Migrate is a one-shot per user — failures painful since users don't re-run. Better to be permissive on input format than reject a valid legacy file.
+
+**How:** Loosen the regex; add fixture files to bats suite covering variant whitespace.
 
 ---
 

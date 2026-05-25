@@ -1,5 +1,20 @@
 # Changelog
 
+## v6.5.0 — 2026-05-25 — Hook strict mode, jq fallback, slug normalization, capture bugfixes
+
+**Added**
+- **`set -euo pipefail` + ERR traps in all three hooks.** Each hook now runs in strict mode. Any unguarded failure emits a fallback JSON/systemMessage instead of producing silence. ERR trap logs `rc` + line number to `hook-trace.log` and exits 0 — hook never blocks session start or tool execution. Intentionally-fallible commands wrapped with `|| true`.
+- **`jq` fallback in PostToolUse JSON parser chain.** Parser chain extended to `python3 → node → jq → grep`. The `jq` path handles cases where only `jq` is installed (common on minimal server environments). `doctor.sh` section 6 now reports which parser is active and fails if none of the three robust parsers are available.
+- **`doctor.sh` JSON parser section.** New section 6 checks for python3/node/jq; shows which parser PostToolUse will use (highest priority first); emits a `✗` critical failure if only grep fallback is available.
+
+**Fixed**
+- **Slug `_` → `-` normalization.** Claude Code converts underscores to hyphens in project slugs (e.g., `llm_projects` → `llm-projects`). All three slug computations (session-start, post-tool-use, doctor) were preserving underscores, causing SESSION.md lookups to silently miss the file on any path containing `_`. Added `slug="${slug//_/-}"` after each slug block.
+- **PostToolUse null-byte separator stripped by bash.** Python3 and node paths used `\x00` (null byte) as field separator, but bash `$(...)` command substitutions silently strip null bytes — the `IFS=$'\x00' read` split never fired, leaving all three variables empty and causing the hook to exit without capturing anything. Replaced separator with `\x01` (SOH), which bash preserves.
+- **Python3 heredoc vs pipe conflict.** `python3 - <<'PYEOF'` used a heredoc for the script, which consumed stdin — `json.load(sys.stdin)` always received an empty stream and threw `JSONDecodeError`. Switched to `python3 -c '...'` so the pipe delivers `$input` to `sys.stdin` correctly.
+
+**Improved**
+- Installed hooks updated to v6.5.0 (copy `hooks/*.sh` + `bin/doctor.sh` to `~/.claude/`).
+
 ## v6.4.0 — 2026-05-25 — PostToolUse capture, cwd auto-inject, portability fixes, doctor.sh
 
 **Added**
