@@ -92,6 +92,44 @@ if [[ -f "$session_file" ]]; then
   fi
 fi
 
+# --- CWD mismatch detection ---
+# Reads 'cwd:' from SESSION.md YAML frontmatter. If it doesn't match current
+# project directory, the stored session state belongs to a different project —
+# suppress it immediately rather than letting the agent silently continue the
+# wrong task. No prompt to the user needed; the warning instructs the model to
+# treat SESSION.md as empty and start fresh.
+cwd_mismatch_warning=""
+if [[ -f "$session_file" ]]; then
+  session_cwd=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r')
+  if [[ -n "$session_cwd" ]]; then
+    # Build Windows-style canonical path for comparison (e.g. C:/dev/project).
+    current_cwd_canonical=""
+    if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
+      current_cwd_canonical="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    else
+      current_cwd_canonical="$PWD"
+    fi
+    if [[ "$session_cwd" != "$current_cwd_canonical" && "$session_cwd" != "$PWD" ]]; then
+      cwd_mismatch_warning=$'\n\nCWD MISMATCH — DO NOT CONTINUE PREVIOUS SESSION: SESSION.md was written in ['"${session_cwd}"$']. Current project is ['"${current_cwd_canonical}"$']. The loaded state belongs to a DIFFERENT PROJECT. Ignore all content from SESSION.md. Create a fresh SESSION.md when substantive work begins in the current project.'
+      echo "[$(date -Iseconds)] CWD mismatch: session_cwd=${session_cwd} current=${current_cwd_canonical}" \
+        >> "$CLAUDE_HOME/debug/hook-trace.log"
+    fi
+  fi
+fi
+
+# --- Privacy redaction: strip <private>…</private> from SESSION.md ---
+# Runs in-place on every SessionStart. Catches tagged secrets that Claude
+# accidentally persisted in the previous session before they reach model context.
+# Strips all occurrences; backup preserved at SESSION.md.bak only on first pass.
+if [[ -f "$session_file" ]]; then
+  if grep -q '<private>' "$session_file" 2>/dev/null; then
+    cp -n "$session_file" "${session_file}.bak" 2>/dev/null || true
+    sed -i 's/<private>[^<]*<\/private>//g' "$session_file" 2>/dev/null || true
+    echo "[$(date -Iseconds)] Privacy redaction applied to SESSION.md" \
+      >> "$CLAUDE_HOME/debug/hook-trace.log"
+  fi
+fi
+
 # JSON-escape a string: \ -> \\, " -> \", newline -> \n, tab -> \t, CR -> \r
 json_escape() {
   local s="$1"
@@ -113,7 +151,7 @@ Before your first response:
 
 During work: update SESSION.md continuously (decisions with rationale, file map, last action, and refresh the last_updated marker). Do NOT batch updates to end-of-session.'
 
-full="${base}${stale_warning}"
+full="${base}${stale_warning}${cwd_mismatch_warning}"
 escaped=$(json_escape "$full")
 
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"

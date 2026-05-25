@@ -63,7 +63,7 @@ Do this even if a SessionStart hook also fires — idempotent.
 1. **L0 is sacred** — ≤25 lines hard cap. Identity, role, hard preferences, env-wide credentials only. Never project-specific.
 2. **L1a (`<repo>/CLAUDE.md`) is thin** — it's loaded into every session in this repo. Bloated entries eat context across all your work. Keep it to: commands, top-level conventions, MUST/MUST NOT, doc index pointing at L1b.
 3. **L1b (`<repo>/.claude-docs/*.md`) is read on demand.** Big, typed, lazy. The doc index in L1a says "to do X read Y.md" — agent picks what it needs.
-4. **L2 is the killer feature.** Update SESSION.md *as you work*, not at end:
+4. **L2 is the killer feature.** Update SESSION.md *as you work*, not at end. Write prose in **compressed caveman notation** — drop articles/filler, use fragments, keep code/paths/numbers exact. SESSION.md is read by agents not humans; terseness directly reduces context cost on every reload and compact.
    - After every decision: append to `# Decisions` with rationale
    - After every meaningful action: update `# State` (last action, next step)
    - After identifying a key file: append to `# File map` with `path:line — what`
@@ -119,6 +119,7 @@ When the user starts substantive work in a repo with no `<repo>/CLAUDE.md`:
 ```markdown
 ---
 last_updated: <ISO-8601 UTC, e.g. 2026-04-30T15:23:00Z>
+cwd: <absolute path to current project root, e.g. C:/dev/myproject>
 tags: [memory/l2, session]
 ---
 
@@ -264,13 +265,25 @@ Rapid chain of short messages → group with `->`:
   **I did:** <one summary line>
 ```
 
+## Privacy: `<private>` redaction
+
+Wrap any content you do not want persisted to disk inside `<private>...</private>` tags:
+
+```
+API key was <private>sk-ant-abc123...</private>, stored in env ANTHROPIC_API_KEY.
+```
+
+The SessionStart hook strips all `<private>...</private>` blocks from SESSION.md in-place before injecting context. The PreCompact hook instructs the model to strip them before writing. This is a defense-in-depth pattern: even if tagged content slips through, it is removed on the next session open.
+
+**Rule:** never write raw secrets to any memory file. Write the env-var name or file path instead. Use `<private>` only for transient values you must note mid-session but must not survive a session boundary.
+
 ## What NOT to save (any layer)
 
 - Code patterns derivable from a quick repo scan (gotchas are non-obvious; structure is obvious)
 - Git history facts — `git log` is authoritative
 - CLAUDE.md duplicates
 - Trivia ("user said hi today")
-- Secrets / tokens — write the env-var name or path, not the value
+- Secrets / tokens — write the env-var name or path, not the value. Use `<private>` tags if you must note a value transiently.
 
 ## Recovery
 
