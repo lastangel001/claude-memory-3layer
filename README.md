@@ -1,6 +1,6 @@
 # claude-memory-3layer
 
-> Hand-curated, in-repo memory for Claude Code. Three layers, deliberate placement, zero auto-capture. With hybrid retrieval (qmd) and on-demand symbol map (ctags). 100% local.
+> Hand-curated, in-repo memory for Claude Code. Three layers, deliberate placement, selective auto-capture (3 high-signal events only). With hybrid retrieval (qmd) and on-demand symbol map (ctags). 100% local.
 
 A replacement for Claude Code's default memory system, battle-tested on ~15 real projects (PHP/mpcmf, Python, TS, reverse-engineering, multi-machine setups).
 
@@ -62,12 +62,19 @@ Default mode is **explicit-promotion** — cross-session memory only when the us
 
 ## Hooks (enforce discipline)
 
-- **SessionStart** — injects protocol reminder + three active checks:
+- **SessionStart** — injects protocol reminder + active checks on every session open:
   - *Staleness* — `SESSION.md` >24h old → forces explicit *"continue or reset?"* with user
-  - *CWD mismatch* — reads `cwd:` from `SESSION.md` frontmatter; if it doesn't match current project directory, injects a hard reset warning so the agent doesn't continue the wrong task silently
-  - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`)
+  - *CWD mismatch* — reads `cwd:` from `SESSION.md` frontmatter; if it doesn't match current directory, injects hard reset warning — agent never silently continues the wrong project's task
+  - *CWD auto-inject* — computes canonical path and injects it as a ready-to-paste value so model always has the correct `cwd:` for new `SESSION.md` files
+  - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`; CRLF-safe)
   - Also kicks background `qmd update` debounced 6h
 - **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
+- **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
+  - `git commit` via Bash → appends commit message to session
+  - `Write` to `**/CLAUDE.md` → notes L1a in-repo entry update
+  - `Write` to `**/.claude-docs/*.md` → notes L1b doc update
+
+  Everything else is silently ignored — explicit-promotion philosophy preserved for all other events.
 
 ### SESSION.md compression
 
@@ -95,7 +102,7 @@ The SessionStart hook strips all `<private>` blocks from `SESSION.md` in-place b
 
 ## What's deliberately NOT in it
 
-- ✗ **Auto-capture** of arbitrary tool output into memory — that's exactly the failure mode `AgentMemory` documents in their open issues (silent data loss, runaway logs).
+- ✗ **Blind auto-capture** of arbitrary tool output — that's the failure mode `AgentMemory` documents in their open issues (silent data loss, runaway logs). The PostToolUse hook captures exactly 3 patterns (git commit, CLAUDE.md write, .claude-docs write); everything else requires explicit "remember".
 - ✗ **MCP server with 50+ tools** — context-window tax in every request, whether you use those tools or not.
 - ✗ **Persistent code-graph daemon** with per-project SQLite — `/codemap` is on-demand instead. Re-scan in ~1s for medium repos.
 - ✗ **Vector blob** you can't `diff`. Memory is markdown you can read with your eyes.
@@ -132,11 +139,13 @@ memory/IDENTITY.md              — L0 template
 templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
-hooks/session-start.sh          — staleness + CWD mismatch + privacy redaction + compression flag + qmd auto-refresh
+hooks/session-start.sh          — staleness + CWD mismatch + cwd auto-inject + privacy redaction + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
-commands/{recall,codemap,memory}.md — slash command definitions
+hooks/post-tool-use.sh          — selective auto-capture: git commit, CLAUDE.md writes, .claude-docs writes
+commands/{recall,codemap,memory,memstat}.md — slash command definitions
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
-settings.snippet.json           — hooks block for ~/.claude/settings.json
+bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
 IDEAS.md                        — prioritised backlog of future enhancements
 ```
 
