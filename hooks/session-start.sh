@@ -2,9 +2,9 @@
 # SessionStart hook — injects memory protocol reminder + staleness check.
 # Output: JSON with hookSpecificOutput.additionalContext.
 
-echo "[$(date -Iseconds)] SessionStart fired (cwd=$PWD)" >> /c/Users/greev/.claude/debug/hook-trace.log
-
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+
+echo "[$(date -Iseconds)] SessionStart fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log"
 mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/logs" 2>/dev/null
 
 # --- qmd FTS index auto-refresh (debounced, background) ---
@@ -71,7 +71,7 @@ else
   slug="${slug#-}"
 fi
 
-session_file="/c/Users/greev/.claude/projects/${slug}/memory/SESSION.md"
+session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 
 stale_warning=""
 if [[ -f "$session_file" ]]; then

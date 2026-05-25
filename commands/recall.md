@@ -17,7 +17,7 @@ Optional flags:
 
 1. Run via Bash. PATH augmentation if qmd not on PATH:
    ```bash
-   export PATH="/c/Program Files/nodejs:/c/Users/greev/AppData/Roaming/npm:$PATH"
+   export PATH="/c/Program Files/nodejs:$APPDATA/npm:$PATH"  # Windows example; adjust for your npm path
    export QMD_LLAMA_GPU=none   # Windows: Vulkan default crashes on some GPUs
    ```
 

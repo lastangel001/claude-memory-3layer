@@ -22,7 +22,7 @@ Manage memory protocol behaviour. Default is **explicit-promotion** mode (user m
 
 4. For **`refresh`**: `qmd update && qmd embed`. Report counts (`N new, M updated`).
 
-PATH note: prepend `export PATH="/c/Program Files/nodejs:/c/Users/greev/AppData/Roaming/npm:$PATH" &&` to qmd commands if needed.
+PATH note: prepend `export PATH="/c/Program Files/nodejs:$APPDATA/npm:$PATH" &&` to qmd commands if needed (Windows; adjust path to your npm global bin).
 
 ## Behaviour when auto-capture is ON (model must follow)
 
