@@ -117,6 +117,18 @@ if [[ -f "$session_file" ]]; then
   fi
 fi
 
+# --- SESSION compression flag ---
+# Same logic as pre-compact.sh: env var > flag file > default on.
+# Injected into context so the model knows which mode to use when updating SESSION.md.
+compress_note=""
+if [[ "${CLAUDE_SESSION_COMPRESS:-1}" == "0" ]] || [[ -f "$CLAUDE_HOME/.session-compress-disabled" ]]; then
+  compress_note=$'\n\nSESSION COMPRESSION: disabled. Write SESSION.md prose naturally — do NOT apply caveman compression when updating this file. (Re-enable: rm ~/.claude/.session-compress-disabled)'
+  echo "[$(date -Iseconds)] SessionStart: session compression disabled" \
+    >> "$CLAUDE_HOME/debug/hook-trace.log"
+else
+  compress_note=$'\n\nSESSION COMPRESSION: enabled. Write SESSION.md prose in compressed caveman notation — drop articles/filler, fragments OK, code/paths exact. Saves context-window tokens on every reload.'
+fi
+
 # --- Privacy redaction: strip <private>…</private> from SESSION.md ---
 # Runs in-place on every SessionStart. Catches tagged secrets that Claude
 # accidentally persisted in the previous session before they reach model context.
@@ -151,7 +163,7 @@ Before your first response:
 
 During work: update SESSION.md continuously (decisions with rationale, file map, last action, and refresh the last_updated marker). Do NOT batch updates to end-of-session.'
 
-full="${base}${stale_warning}${cwd_mismatch_warning}"
+full="${base}${stale_warning}${cwd_mismatch_warning}${compress_note}"
 escaped=$(json_escape "$full")
 
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"

@@ -63,7 +63,20 @@ Do this even if a SessionStart hook also fires — idempotent.
 1. **L0 is sacred** — ≤25 lines hard cap. Identity, role, hard preferences, env-wide credentials only. Never project-specific.
 2. **L1a (`<repo>/CLAUDE.md`) is thin** — it's loaded into every session in this repo. Bloated entries eat context across all your work. Keep it to: commands, top-level conventions, MUST/MUST NOT, doc index pointing at L1b.
 3. **L1b (`<repo>/.claude-docs/*.md`) is read on demand.** Big, typed, lazy. The doc index in L1a says "to do X read Y.md" — agent picks what it needs.
-4. **L2 is the killer feature.** Update SESSION.md *as you work*, not at end. Write prose in **compressed caveman notation** — drop articles/filler, use fragments, keep code/paths/numbers exact. SESSION.md is read by agents not humans; terseness directly reduces context cost on every reload and compact.
+4. **L2 is the killer feature.** Update SESSION.md *as you work*, not at end. By default, write prose in **compressed caveman notation** — drop articles/filler, use fragments, keep code/paths/numbers exact. SESSION.md is read by agents not humans; terseness directly reduces context cost on every reload and compact.
+
+   **Compression toggle** (default: on):
+   ```bash
+   # Disable permanently
+   touch ~/.claude/.session-compress-disabled
+
+   # Re-enable
+   rm ~/.claude/.session-compress-disabled
+
+   # Disable for one session only (set before launching Claude)
+   CLAUDE_SESSION_COMPRESS=0 claude
+   ```
+   When disabled, the SessionStart and PreCompact hooks tell the model to write prose naturally. The flag is checked on every hook fire — no restart needed.
    - After every decision: append to `# Decisions` with rationale
    - After every meaningful action: update `# State` (last action, next step)
    - After identifying a key file: append to `# File map` with `path:line — what`
