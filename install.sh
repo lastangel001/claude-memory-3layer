@@ -75,6 +75,7 @@ backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/me
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"
+backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
 backup_and_install "$SRC/bin/lib/slug.sh"              "$CLAUDE_HOME/bin/lib/slug.sh"
 
 if [[ $DRY_RUN -eq 0 ]]; then
@@ -136,6 +137,18 @@ say ""
 
 say "L1-fallback + L2 sessions:"
 say "  = $CLAUDE_HOME/projects/ (untouched — your project + session memory)"
+say ""
+
+# --- Version tracking ---
+
+say "Version tracking:"
+_ver=$(grep -m1 '^## v' "$SRC/CHANGELOG.md" 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+if [[ -n "$_ver" ]]; then
+  do_or_dry "printf '%s\n' '$_ver' > '$CLAUDE_HOME/.memory-version'"
+  say "  + .memory-version = $_ver"
+fi
+do_or_dry "printf '%s\n' '$SRC' > '$CLAUDE_HOME/.memory-source'"
+say "  + .memory-source  = $SRC"
 say ""
 
 # --- Backup summary ---

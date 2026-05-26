@@ -25,6 +25,29 @@ say "CLAUDE_HOME: $CLAUDE_HOME"
 say ""
 
 # ─────────────────────────────────────────────
+# 0. Installed version + source
+# ─────────────────────────────────────────────
+say "Version:"
+vf="$CLAUDE_HOME/.memory-version"
+sf="$CLAUDE_HOME/.memory-source"
+if [[ -f "$vf" ]]; then
+  ok "Installed: $(tr -d '\r\n' < "$vf")"
+else
+  warn ".memory-version not found — run install.sh to register"
+fi
+if [[ -f "$sf" ]]; then
+  _src_path=$(tr -d '\r\n' < "$sf")
+  if [[ -d "$_src_path" ]]; then
+    ok "Source: $_src_path"
+  else
+    warn "Source path missing: $_src_path (repo moved? re-clone and reinstall)"
+  fi
+else
+  warn ".memory-source not found — run install.sh to register (update.sh won't work)"
+fi
+say ""
+
+# ─────────────────────────────────────────────
 # 1. Hook files
 # ─────────────────────────────────────────────
 say "Hook files:"

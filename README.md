@@ -127,6 +127,15 @@ qmd collection add ~/.claude/projects --name claude-projects
 QMD_LLAMA_GPU=none qmd embed   # one-time, ~2GB of GGUF models download
 ```
 
+### Updating
+
+```bash
+~/.claude/bin/update.sh            # git pull + re-install in one step
+~/.claude/bin/update.sh --dry-run  # preview what would change
+```
+
+`install.sh` records the repo path at `~/.claude/.memory-source` on first install. `update.sh` reads it, does `git pull`, then re-runs `install.sh` (idempotent — backs up changed files, never touches `IDENTITY.md` or `projects/`). Run `bash ~/.claude/bin/doctor.sh` to see the installed version.
+
 ## Obsidian compatibility
 
 All memory files use YAML frontmatter with hierarchical tags (`memory/l0` / `memory/l1` / `memory/l2` / `memory/repo`). Open `~/.claude/` or any repo's root as an Obsidian vault — graph view, tag filtering, full-text search across all your projects.
@@ -154,6 +163,7 @@ hooks/post-tool-use.sh          — selective auto-capture: git commit, CLAUDE.m
 commands/{recall,codemap,memory,memstat}.md — slash command definitions
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)

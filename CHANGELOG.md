@@ -1,5 +1,16 @@
 # Changelog
 
+## v6.8.0 — 2026-05-26 — One-step updater, version tracking
+
+**Added**
+- **`bin/update.sh` — one-step updater.** Reads source path from `~/.claude/.memory-source`, does `git pull`, then re-runs `install.sh`. Usage: `~/.claude/bin/update.sh` (or `--dry-run` to preview). Clients no longer need to remember where they cloned the repo.
+- **Version tracking in `install.sh`.** After every install/upgrade, writes two files to `$CLAUDE_HOME/`: `.memory-version` (current semver from CHANGELOG.md) and `.memory-source` (absolute path to the source repo). These power `update.sh` and doctor version display.
+- **`doctor.sh` section 0 — Version.** Shows installed version and source path. Warns if source directory has moved or either file is missing (guides user to reinstall).
+
+**Changed**
+- `install.sh`: installs `bin/update.sh`; writes `.memory-version` + `.memory-source` to `$CLAUDE_HOME/` on every run.
+- `bin/doctor.sh`: section numbering shifted (new section 0 prepended); all previous sections unchanged.
+
 ## v6.7.0 — 2026-05-26 — DRY slug lib, APPDATA guards, codemap fix, Windows docs, migrate regex
 
 **Added**
