@@ -55,7 +55,7 @@ The script writes everything under `$CLAUDE_HOME` (defaults to `~/.claude`). Man
 | `~/.claude/CLAUDE.md` | Replaced, `.bak-<ts>` backup if content differs. |
 | `~/.claude/hooks/*.sh` | Replaced, `.bak-<ts>` backup if content differs. |
 | `~/.claude/commands/{recall,memory,codemap}.md` | Replaced, `.bak-<ts>` backup if content differs. (Your own `task.md`/etc. untouched.) |
-| `~/.claude/settings.json` | Never auto-merged. Created fresh if absent. If exists without our hooks, you're told to merge by hand. |
+| `~/.claude/settings.json` | Created fresh if absent. If exists and missing hooks, `bin/merge-settings.sh` merges them automatically (backs up first). |
 | `~/.cache/qmd/`, `<repo>/.codemap.tags` | Never touched. They're caches, rebuilt on demand. |
 
 ### Rollback
@@ -305,6 +305,32 @@ Conventions kept compatible:
 - Frontmatter is YAML, not HTML comments — Obsidian parses it natively, the model still reads files normally, the staleness hook still extracts `last_updated:` via regex.
 - Standard markdown links `[text](path)` — work in Obsidian AND in Claude. Wikilinks `[[note]]` would break for Claude, so they're avoided in templates.
 - Hierarchical tags (`memory/l0`) for clean nesting in Obsidian's tag panel.
+
+## Windows-specific notes
+
+Claude Code runs hooks via Git Bash on Windows. Most things work transparently, but a few traps are worth knowing.
+
+### Space in Windows username
+
+If your Windows username contains a space (`John Doe`), `%APPDATA%` and `%USERPROFILE%` expand to paths like `C:\Users\John Doe\...`. The hooks' `_add_path()` helper normalises these to `/c/Users/John Doe/...` before adding to `PATH`. Bash's `command -v` handles PATH entries with spaces correctly. Run `bash ~/.claude/bin/doctor.sh` — if it warns about spaces in PATH, your tools are still found; the warning is informational.
+
+### Git Bash backslash conversion
+
+Git Bash converts Windows-style backslash paths to forward-slash Unix paths automatically. `$APPDATA` in Git Bash is already `/c/Users/.../AppData/Roaming`. The hooks use this form throughout. If you paste a Windows path manually (e.g. in `IDENTITY.md`), use forward slashes: `C:/Users/foo` not `C:\Users\foo`.
+
+### PATH precedence: MSVC / MINGW / Cygwin vs Git Bash
+
+If you have MSVC tools, MINGW, or Cygwin on PATH before Git Bash's own `/usr/bin`, you may get wrong versions of `sed`, `grep`, `find`, or `date`. Symptom: `date -d` fails with "illegal option" even on Windows (you're hitting MINGW date, not GNU date). Fix: ensure Git Bash's `/usr/bin` precedes other bins in PATH, or add `alias date='/usr/bin/date'` in `.bashrc`.
+
+`bash ~/.claude/bin/doctor.sh` will catch most symptoms — a failing syntax check or invalid-JSON warning is often a PATH conflict.
+
+### MSYS2 / Cygwin coexistence
+
+If MSYS2 or Cygwin is installed alongside Git Bash, their `bash.exe` may shadow Git Bash's when Claude Code launches hooks. Claude Code uses the `bash` on `PATH`; ensure `C:\Program Files\Git\bin` appears before MSYS2/Cygwin paths. Symptoms: hooks fire but produce no output, or `hook-trace.log` shows unexpected paths.
+
+### qmd not found despite being installed
+
+If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the npm global bin directory isn't on `PATH` when hooks run. The hooks automatically add `$APPDATA/npm` and `$USERPROFILE/AppData/Roaming/npm` to PATH at runtime. If qmd still isn't found, find where npm installed it (`npm bin -g`) and add that path to your system PATH or to the `_add_path` calls in `~/.claude/hooks/session-start.sh`.
 
 ## Troubleshooting
 

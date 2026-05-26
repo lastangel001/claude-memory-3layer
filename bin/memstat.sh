@@ -20,8 +20,8 @@ _add_path() {
   [[ -d "$p" ]] && PATH="$p:$PATH"
 }
 _add_path "/c/Program Files/nodejs"
-_add_path "$APPDATA/npm"
-_add_path "$USERPROFILE/AppData/Roaming/npm"
+_add_path "${APPDATA:-}/npm"
+_add_path "${USERPROFILE:-}/AppData/Roaming/npm"
 _add_path "$HOME/.npm-global/bin"
 _add_path "/usr/local/bin"
 _add_path "/opt/homebrew/bin"

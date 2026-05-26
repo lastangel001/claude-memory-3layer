@@ -1,5 +1,21 @@
 # Changelog
 
+## v6.7.0 — 2026-05-26 — DRY slug lib, APPDATA guards, codemap fix, Windows docs, migrate regex
+
+**Added**
+- **`bin/lib/slug.sh` — shared slug library.** Extracts the Claude Code project slug + canonical-cwd computation into a single sourced library (`_compute_slug`). All three consumers (session-start, post-tool-use, doctor) now `source "${CLAUDE_HOME}/bin/lib/slug.sh"` instead of duplicating ~12 lines each. Eliminates the drift risk that caused the v6.5.0 slug bug. Installed to `$CLAUDE_HOME/bin/lib/slug.sh`.
+- **Windows-specific section in INSTALL.md.** Documents: space-in-username PATH handling, Git Bash backslash-path normalization, PATH precedence (MSVC/MINGW/Cygwin vs Git Bash), MSYS2/Cygwin coexistence, and qmd-not-found diagnositcs.
+- **`doctor.sh` PATH spaces check (section 5).** Warns when any PATH entry contains an embedded space — usually caused by a Windows username with spaces. Informational only (bash handles these correctly, but other tools may not).
+
+**Fixed**
+- **`${APPDATA:-}` / `${USERPROFILE:-}` guards.** `session-start.sh` runs with `set -u`; the qmd refresh subshell inherits it. On macOS/Linux `$APPDATA` and `$USERPROFILE` are unset, causing `_add_path "$APPDATA/npm"` to throw "unbound variable" and silently kill the qmd update. Fixed with `${APPDATA:-}` / `${USERPROFILE:-}` forms in both `session-start.sh` and `memstat.sh`.
+- **`grep -F` for ctags symbol lookup in `codemap.sh`.** The two `grep "^${arg}\t"` calls used ERE, so symbol names containing `.`, `*`, `[`, or other regex metacharacters would produce wrong or empty results silently. Changed to `grep -F` (fixed-string) — ctags symbol names are never regex patterns.
+- **`migrate.sh` HTML-comment regex hardened.** Previous regex required no leading whitespace before `<!--` and required a closing `-->` on the same line. Files with `  <!-- last_updated: ... -->` (leading indent) or without a proper closing `-->` were silently skipped. New patterns: allow `^[[:space:]]*\<!--` prefix, require only the ISO timestamp (trailing content ignored). Pattern stored in a variable to prevent bash parser from misinterpreting bare `<` as a comparison operator.
+
+**Changed**
+- `install.sh`: creates `$CLAUDE_HOME/bin/lib/` directory; installs `slug.sh`; `chmod +x` covers lib files.
+- Inline slug computation removed from `session-start.sh`, `post-tool-use.sh`, `doctor.sh` — replaced with `source + _compute_slug` call.
+
 ## v6.6.0 — 2026-05-26 — Private exclusions, JSON validation, atomic qmd, settings merge, Obsidian status
 
 **Added**

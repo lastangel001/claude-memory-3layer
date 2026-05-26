@@ -80,22 +80,10 @@ fi
 
 if [[ -z "$tool_name" ]]; then exit 0; fi
 
-# --- Compute slug + session file path (same logic as session-start.sh) ---
-
-slug=""
-cwd_unix="$PWD"
-if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-  drive="${BASH_REMATCH[1]^^}"
-  rest="${BASH_REMATCH[2]}"
-  slug="${drive}--${rest//\//-}"
-elif [[ "$cwd_unix" =~ ^/([a-zA-Z])/?$ ]]; then
-  drive="${BASH_REMATCH[1]^^}"
-  slug="${drive}-"
-else
-  slug="${cwd_unix//\//-}"
-  slug="${slug#-}"
-fi
-slug="${slug//_/-}"
+# --- Compute slug + session file path ---
+# shellcheck source=../bin/lib/slug.sh
+source "${CLAUDE_HOME}/bin/lib/slug.sh"
+_compute_slug
 
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 

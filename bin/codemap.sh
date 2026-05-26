@@ -83,7 +83,7 @@ case "$cmd" in
   def)
     [ -z "$arg" ] && { echo "Usage: codemap.sh def <symbol>"; exit 1; }
     root=$(resolve_root); ensure_tags "$root"
-    grep "^${arg}	" "$root/.codemap.tags" 2>/dev/null \
+    grep -F "^${arg}	" "$root/.codemap.tags" 2>/dev/null \
       | awk -F'\t' '{
           file=$2; rest=$3;
           for(i=4;i<=NF;i++) rest=rest "\t" $i;
@@ -104,7 +104,7 @@ case "$cmd" in
     [ -z "$arg" ] && { echo "Usage: codemap.sh callees <symbol>"; exit 1; }
     root=$(resolve_root); ensure_tags "$root"
     # Find def location, then grep callable patterns inside the body (heuristic: next 100 lines).
-    def_line=$(grep "^${arg}	" "$root/.codemap.tags" 2>/dev/null | head -1)
+    def_line=$(grep -F "^${arg}	" "$root/.codemap.tags" 2>/dev/null | head -1)
     [ -z "$def_line" ] && { echo "(no definition found for ${arg})"; exit 0; }
     file=$(echo "$def_line" | awk -F'\t' '{print $2}')
     lineno=$(echo "$def_line" | grep -oE 'line:[0-9]+' | head -1 | cut -d: -f2)

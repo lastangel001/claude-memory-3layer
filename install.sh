@@ -57,7 +57,8 @@ say ""
 
 if [[ $DRY_RUN -eq 0 ]]; then
   mkdir -p "$CLAUDE_HOME/hooks" "$CLAUDE_HOME/memory" "$CLAUDE_HOME/commands" \
-           "$CLAUDE_HOME/bin"   "$CLAUDE_HOME/debug"  "$CLAUDE_HOME/logs"
+           "$CLAUDE_HOME/bin"   "$CLAUDE_HOME/bin/lib" \
+           "$CLAUDE_HOME/debug" "$CLAUDE_HOME/logs"
 fi
 
 # --- Protocol + tooling (safe to overwrite, backup if differs) ---
@@ -74,9 +75,11 @@ backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/me
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"
+backup_and_install "$SRC/bin/lib/slug.sh"              "$CLAUDE_HOME/bin/lib/slug.sh"
 
 if [[ $DRY_RUN -eq 0 ]]; then
-  chmod +x "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh 2>/dev/null || true
+  chmod +x "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh \
+            "$CLAUDE_HOME/bin/lib/"*.sh 2>/dev/null || true
 fi
 say ""
 

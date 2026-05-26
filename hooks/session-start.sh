@@ -61,8 +61,8 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
       [[ -d "$p" ]] && PATH="$p:$PATH"
     }
     _add_path "/c/Program Files/nodejs"
-    _add_path "$APPDATA/npm"
-    _add_path "$USERPROFILE/AppData/Roaming/npm"
+    _add_path "${APPDATA:-}/npm"
+    _add_path "${USERPROFILE:-}/AppData/Roaming/npm"
     _add_path "$HOME/.npm-global/bin"
     _add_path "/usr/local/bin"
     _add_path "/opt/homebrew/bin"
@@ -74,33 +74,12 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
   disown 2>/dev/null || true
 fi
 
-# Compute project slug from cwd: drive letter + path with / replaced by --
-# e.g. /c/dev/local -> C--dev-local
-slug=""
-cwd_unix="$PWD"
-if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-  drive="${BASH_REMATCH[1]^^}"
-  rest="${BASH_REMATCH[2]}"
-  # Match Claude Code's slug convention: drive + "--" + path with "/" -> "-" and "_" -> "-"
-  slug="${drive}--${rest//\//-}"
-elif [[ "$cwd_unix" =~ ^/([a-zA-Z])/?$ ]]; then
-  drive="${BASH_REMATCH[1]^^}"
-  slug="${drive}-"
-else
-  slug="${cwd_unix//\//-}"
-  slug="${slug#-}"
-fi
-slug="${slug//_/-}"
+# Compute project slug + canonical cwd via shared library.
+# shellcheck source=../bin/lib/slug.sh
+source "${CLAUDE_HOME}/bin/lib/slug.sh"
+_compute_slug
 
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
-
-# Canonical cwd for SESSION.md frontmatter — computed once, used in CWD check + base message.
-current_cwd_canonical=""
-if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-  current_cwd_canonical="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
-else
-  current_cwd_canonical="$PWD"
-fi
 
 stale_warning=""
 if [[ -f "$session_file" ]]; then

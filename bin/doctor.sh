@@ -94,17 +94,9 @@ say ""
 # 4. Current project SESSION.md (optional)
 # ─────────────────────────────────────────────
 say "Current project:"
-slug=""
-cwd_unix="$PWD"
-if [[ "$cwd_unix" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-  drive="${BASH_REMATCH[1]^^}"; rest="${BASH_REMATCH[2]}"
-  slug="${drive}--${rest//\//-}"
-elif [[ "$cwd_unix" =~ ^/([a-zA-Z])/?$ ]]; then
-  slug="${BASH_REMATCH[1]^^}-"
-else
-  slug="${cwd_unix//\//-}"; slug="${slug#-}"
-fi
-slug="${slug//_/-}"
+# shellcheck source=lib/slug.sh
+source "${CLAUDE_HOME}/bin/lib/slug.sh"
+_compute_slug
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 if [[ ! -f "$session_file" ]]; then
   warn "No SESSION.md for current project (normal for new projects)"
@@ -127,7 +119,21 @@ fi
 say ""
 
 # ─────────────────────────────────────────────
-# 5. Optional retrieval tools
+# 5. PATH sanity (Windows spaces-in-username)
+# ─────────────────────────────────────────────
+say "PATH sanity:"
+_space_entries=$(printf '%s\n' "$PATH" | tr ':' '\n' | grep ' ' || true)
+if [[ -n "$_space_entries" ]]; then
+  warn "PATH entries with embedded spaces detected — may cause tool lookup failures on some shells:"
+  while IFS= read -r _e; do warn "  '$_e'"; done <<< "$_space_entries"
+  warn "  Usually caused by Windows username with spaces; hooks use _add_path() to normalize."
+else
+  ok "No spaces in PATH entries"
+fi
+say ""
+
+# ─────────────────────────────────────────────
+# 6. Optional retrieval tools
 # ─────────────────────────────────────────────
 say "Optional tools (needed for /recall and /codemap):"
 command -v qmd   >/dev/null 2>&1 && ok "qmd on PATH"   || warn "qmd not found — /recall unavailable (see INSTALL.md)"
@@ -136,7 +142,7 @@ command -v rg    >/dev/null 2>&1 && ok "rg on PATH"    || warn "rg (ripgrep) not
 say ""
 
 # ─────────────────────────────────────────────
-# 6. JSON parsers for PostToolUse hook
+# 7. JSON parsers for PostToolUse hook
 # ─────────────────────────────────────────────
 say "JSON parsers (PostToolUse hook — python3 > node > jq > grep):"
 _json_parser=""
