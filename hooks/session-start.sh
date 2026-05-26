@@ -32,14 +32,21 @@ trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
 # background node process from surprising you with CPU spikes. BM25 search
 # (the /recall default) works fine without fresh vectors.
 qmd_marker="$CLAUDE_HOME/.qmd-last-refresh"
-qmd_refresh_needed=1
-if [[ -f "$qmd_marker" ]]; then
-  last=$(cat "$qmd_marker" 2>/dev/null || echo 0)
-  now=$(date +%s)
-  age=$((now - last))
-  if [[ $age -lt 21600 && "${QMD_FORCE_REFRESH:-0}" != "1" ]]; then
-    qmd_refresh_needed=0
+qmd_marker_lock="${qmd_marker}.lock"
+qmd_refresh_needed=0
+
+# Atomic check-and-set via mkdir (POSIX atomic, no flock dependency).
+# Prevents two parallel SessionStart hooks from both triggering qmd update.
+# Marker written BEFORE spawning so second hook sees it immediately.
+if mkdir "$qmd_marker_lock" 2>/dev/null; then
+  _qmd_now=$(date +%s)
+  _qmd_last=$(cat "$qmd_marker" 2>/dev/null || echo 0)
+  _qmd_age=$((_qmd_now - _qmd_last))
+  if [[ $_qmd_age -ge 21600 || "${QMD_FORCE_REFRESH:-0}" == "1" ]]; then
+    qmd_refresh_needed=1
+    printf '%s\n' "$_qmd_now" > "$qmd_marker"
   fi
+  rmdir "$qmd_marker_lock" 2>/dev/null || true
 fi
 if [[ "$qmd_refresh_needed" == "1" ]]; then
   (
@@ -61,8 +68,7 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
     _add_path "/opt/homebrew/bin"
     export PATH
     if command -v qmd >/dev/null 2>&1; then
-      qmd update >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1 \
-        && date +%s > "$qmd_marker"
+      qmd update >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1
     fi
   ) &
   disown 2>/dev/null || true
@@ -136,6 +142,27 @@ if [[ -f "$session_file" ]]; then
   fi
 fi
 
+# --- .claude-private glob exclusion ---
+# If the project root contains a .claude-private file, read its glob patterns
+# and inject them into additionalContext so the model skips those paths for
+# all memory/capture purposes. Lines starting with # or empty lines ignored.
+private_exclusions=""
+private_file="${PWD}/.claude-private"
+if [[ -f "$private_file" ]]; then
+  _patterns=()
+  while IFS= read -r _line; do
+    _line="${_line%$'\r'}"
+    [[ -z "$_line" || "$_line" =~ ^[[:space:]]*# ]] && continue
+    _patterns+=("$_line")
+  done < "$private_file"
+  if [[ ${#_patterns[@]} -gt 0 ]]; then
+    _pattern_list=$(printf '  - %s\n' "${_patterns[@]}")
+    private_exclusions=$'\n\nPRIVATE PATH EXCLUSIONS (.claude-private found in project root): Never reference, capture to SESSION.md, or include in any memory layer any path matching these globs:\n'"${_pattern_list}"$'\nTreat all matching paths as non-existent for memory and capture purposes.'
+    echo "[$(date -Iseconds)] SessionStart: .claude-private loaded (${#_patterns[@]} patterns)" \
+      >> "$CLAUDE_HOME/debug/hook-trace.log" || true
+  fi
+fi
+
 # --- SESSION compression flag ---
 # Same logic as pre-compact.sh: env var > flag file > default on.
 # Injected into context so the model knows which mode to use when updating SESSION.md.
@@ -190,7 +217,27 @@ During work: update SESSION.md continuously (decisions with rationale, file map,
 # when creating SESSION.md — eliminates the placeholder that gets forgotten.
 cwd_hint=$'\n\nCurrent project cwd (paste verbatim as \'cwd:\' value in SESSION.md YAML frontmatter): '"${current_cwd_canonical}"
 
-full="${base}${stale_warning}${cwd_mismatch_warning}${cwd_hint}${compress_note}"
+full="${base}${stale_warning}${cwd_mismatch_warning}${private_exclusions}${cwd_hint}${compress_note}"
 escaped=$(json_escape "$full")
 
-printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$escaped"
+# Validate JSON before emitting. Exotic Unicode or control chars that json_escape
+# doesn't cover would produce broken JSON and silently kill the hook's output.
+final_json=$(printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}' "$escaped")
+_json_valid=1
+if command -v python3 >/dev/null 2>&1; then
+  printf '%s' "$final_json" | python3 -c "import sys,json; json.loads(sys.stdin.read())" 2>/dev/null \
+    || _json_valid=0
+elif command -v node >/dev/null 2>&1; then
+  printf '%s' "$final_json" | node -e "
+    let s=''; process.stdin.on('data',d=>s+=d);
+    process.stdin.on('end',()=>{try{JSON.parse(s)}catch(e){process.exit(1)}});
+  " 2>/dev/null \
+    || _json_valid=0
+fi
+if [[ $_json_valid -eq 1 ]]; then
+  printf '%s\n' "$final_json"
+else
+  echo "[$(date -Iseconds)] SessionStart: JSON validation failed, using safe fallback" \
+    >> "$CLAUDE_HOME/debug/hook-trace.log" || true
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"MEMORY HOOK ERROR: JSON output failed validation. Check ~/.claude/debug/hook-trace.log."}}\n'
+fi

@@ -20,6 +20,11 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `set -euo pipefail` + ERR traps in all hooks (strict mode; fallback JSON on error; never blocks session start)
 - [x] Robust JSON parsing in `post-tool-use.sh` — `jq` fallback added; `\x01` separator (bash-safe); python3 `-c` fix (heredoc conflict); `doctor.sh` section 6 reports active parser
 - [x] Slug `_` → `-` normalization in all slug computations (matches Claude Code's actual slug formula)
+- [x] `.claude-private` glob exclusion in session-start hook (patterns injected into additionalContext; model skips matching paths for all memory/capture)
+- [x] Obsidian `dataview` frontmatter for SESSION files (`status: active` in template; distillation sets `status: done`)
+- [x] Validate JSON output of `session-start.sh` (python3 → node fallback; broken JSON uses safe error fallback instead of silent failure)
+- [x] Atomic qmd marker write (`mkdir` lock prevents parallel SessionStart hooks from both triggering qmd update; marker written before spawn)
+- [x] Programmatic `settings.json` merge (`bin/merge-settings.sh`; python3 → node → jq; `install.sh` calls it automatically when hooks missing)
 
 ---
 
@@ -59,17 +64,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ---
 
-### M/M — SESSION.md compression via shell (optional cavemem)
-
-**What:** If `cavemem` CLI is installed and SESSION.md is >2 KB, run `cavemem compress "$session_file"` in SessionStart hook after privacy redaction.
-
-**Why:** Protocol-level compression (PreCompact instruction) relies on the model following instructions. Shell-level compression is deterministic — same result regardless of model behavior.
-
-**How:** Add to `session-start.sh` after privacy redaction block. Guard with `command -v cavemem` check so it's optional. Log to `$CLAUDE_HOME/logs/cavemem-compress.log`. Note: cavemem saves backup at `SESSION.md.original.md`; add to `.gitignore` template.
-
-**Risk:** cavemem compress is a dependency. Must never block session start on failure — wrap in `|| true`.
-
----
 
 ### M/M — Periodic SESSION.md cleanup cron
 
@@ -123,17 +117,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ## Hook reliability
 
-### H/M — File locking for SESSION.md (parallel worktrees)
-
-**What:** Guard SESSION.md writes with a per-slug lockfile so two parallel agents in the same project don't clobber each other's output.
-
-**Why:** Two worktrees or two Claude Code windows in the same project share one SESSION.md. Both read, both write → last writer wins, first writer's data silently lost.
-
-**How:** Wrap hook's file-touch ops in `flock "$session_file.lock" -c "..."` (Linux/Windows Git Bash). On macOS `flock` requires `brew install util-linux` — document as known limitation and fall back to a temp-file rename pattern (`write to .SESSION.tmp → mv -f`). Alternatively: per-worktree SESSION.md suffix derived from `git worktree list` branch name, so each worktree gets its own file.
-
-**Risk:** `flock` not available everywhere. Atomic rename (`mv -f`) avoids the dependency but doesn't prevent concurrent reads. Document known limitation in INSTALL.md if full locking not implemented.
-
----
 
 ### M/S — Validate JSON output of session-start.sh
 

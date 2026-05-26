@@ -1,5 +1,20 @@
 # Changelog
 
+## v6.6.0 — 2026-05-26 — Private exclusions, JSON validation, atomic qmd, settings merge, Obsidian status
+
+**Added**
+- **`.claude-private` glob exclusion.** If `$PWD/.claude-private` exists, SessionStart hook reads it as a list of glob patterns (one per line, `#` comments and blank lines ignored, CRLF-safe) and injects them into `additionalContext`. Model is instructed to treat matching paths as non-existent for all memory and capture purposes. Logged to `hook-trace.log`.
+- **Obsidian `dataview` frontmatter for SESSION files.** `status: active` added to SESSION.md YAML template. Distillation step sets `status: done` on task wrap-up. Obsidian users get free session filtering: `dataview TABLE last_updated WHERE status = "active"`.
+- **JSON output validation in `session-start.sh`.** After building the final JSON payload, validates it via python3 → node before emitting. On failure, emits a safe error JSON instead of potentially broken output, logs to `hook-trace.log`. Catches exotic Unicode or control characters not handled by `json_escape`.
+- **`bin/merge-settings.sh` — programmatic settings merge.** Merges `settings.snippet.json` hooks into an existing `settings.json` without clobbering other keys. Parser chain: python3 → node → jq. python3/node: full dedup (won't add duplicate hook commands within an event already present). jq fallback: adds missing event keys, preserves existing. Validates merged JSON before writing. Backs up target as `.bak-<timestamp>`. `install.sh` now calls this automatically when hooks are missing — no more manual merge instructions.
+
+**Fixed**
+- **Race condition on `.qmd-last-refresh` marker.** Replaced non-atomic read→check→spawn pattern with `mkdir`-based atomic lock. Marker is written BEFORE the background qmd process is spawned, so a second parallel SessionStart hook sees the updated marker immediately and skips the duplicate update. No external dependencies (`mkdir` is POSIX atomic on all target filesystems).
+
+**Changed**
+- `install.sh`: installs `bin/merge-settings.sh`; calls it automatically when settings.json exists but hooks are missing (replaces manual merge instructions).
+- IDEAS.md: 5 shipped items moved to "Already shipped". Removed "cavemem compression" (external dependency, anti-goal) and "file locking for SESSION.md" (proposed flock approach doesn't reliably prevent errors on all platforms) from backlog.
+
 ## v6.5.0 — 2026-05-25 — Hook strict mode, jq fallback, slug normalization, capture bugfixes
 
 **Added**

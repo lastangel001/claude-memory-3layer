@@ -73,6 +73,7 @@ backup_and_install "$SRC/commands/memory.md"           "$CLAUDE_HOME/commands/me
 backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/memstat.md"
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
+backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"
 
 if [[ $DRY_RUN -eq 0 ]]; then
   chmod +x "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh 2>/dev/null || true
@@ -108,8 +109,22 @@ else
     say "  = $CLAUDE_HOME/settings.json (all hooks present)"
   else
     say "  ⚠ $CLAUDE_HOME/settings.json missing: ${missing_hooks[*]}"
-    say "    Merge the 'hooks' block from $SRC/settings.snippet.json manually."
-    say "    Do NOT duplicate the top-level 'hooks' key — merge into existing one."
+    say "    Auto-merging hooks..."
+    _merge_ok=0
+    if [[ $DRY_RUN -eq 1 ]]; then
+      do_or_dry "bash '$SRC/bin/merge-settings.sh' --source '$SRC/settings.snippet.json' --target '$CLAUDE_HOME/settings.json'"
+      _merge_ok=1
+    else
+      if bash "$SRC/bin/merge-settings.sh" \
+           --source "$SRC/settings.snippet.json" \
+           --target "$CLAUDE_HOME/settings.json"; then
+        _merge_ok=1
+      fi
+    fi
+    if [[ $_merge_ok -eq 0 ]]; then
+      say "  ✗ Auto-merge failed. Fix manually:"
+      say "    Merge 'hooks' block from $SRC/settings.snippet.json into $CLAUDE_HOME/settings.json"
+    fi
   fi
 fi
 say ""

@@ -118,7 +118,12 @@ Don't answer the user before doing this — the summarizer paraphrases away the 
 If you're working in a side worktree or another chat is touching the same project, leave a `<!-- NOTE: ... -->` block right after `last_updated` describing what state the OTHER session expects.
 
 ### Distillation on task wrap-up
-When the user says "task done" / "done" / "wrap it up" without "remember": rewrite SESSION.md to the empty template, preserving only `# Goal: (none — last task: <X>)`. Do **not** auto-promote.
+When the user says "task done" / "done" / "wrap it up" without "remember": rewrite SESSION.md to the empty template, preserving only `# Goal: (none — last task: <X>)`, and set `status: done` in the YAML frontmatter. Do **not** auto-promote.
+
+Obsidian users can then filter live vs completed sessions with:
+```
+dataview TABLE last_updated WHERE status = "active"
+```
 
 ### Bootstrapping in-repo L1
 When the user starts substantive work in a repo with no `<repo>/CLAUDE.md`:
@@ -133,6 +138,7 @@ When the user starts substantive work in a repo with no `<repo>/CLAUDE.md`:
 ---
 last_updated: <ISO-8601 UTC, e.g. 2026-04-30T15:23:00Z>
 cwd: <absolute path to current project root, e.g. C:/dev/myproject>
+status: active
 tags: [memory/l2, session]
 ---
 
