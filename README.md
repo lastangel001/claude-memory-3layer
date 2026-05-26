@@ -67,7 +67,8 @@ Default mode is **explicit-promotion** — cross-session memory only when the us
   - *CWD mismatch* — reads `cwd:` from `SESSION.md` frontmatter; if it doesn't match current directory, injects hard reset warning — agent never silently continues the wrong project's task
   - *CWD auto-inject* — computes canonical path and injects it as a ready-to-paste value so model always has the correct `cwd:` for new `SESSION.md` files
   - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`; CRLF-safe)
-  - Also kicks background `qmd update` debounced 6h
+  - *Private path exclusions* — if `.claude-private` exists at the project root, reads it as a glob pattern list (one per line, `#` comments ignored) and instructs the model to treat matching paths as non-existent for all memory and capture purposes
+  - Also kicks background `qmd update` debounced 6h (atomic marker — parallel sessions don't double-fire)
 - **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
   - `git commit` via Bash → appends commit message to session
@@ -115,9 +116,9 @@ The SessionStart hook strips all `<private>` blocks from `SESSION.md` in-place b
 See [INSTALL.md](INSTALL.md) for full instructions across Windows / macOS / Linux. TL;DR:
 
 ```bash
-# 1. Drop CLAUDE.md, hooks, commands, bin/, templates into ~/.claude/
-# 2. Merge settings.snippet.json into ~/.claude/settings.json
-# 3. Edit ~/.claude/memory/IDENTITY.md (≤25 lines, who you are)
+# 1. Run install.sh — drops everything into ~/.claude/, merges settings.json automatically
+./install.sh
+# 2. Edit ~/.claude/memory/IDENTITY.md (≤25 lines, who you are)
 # 4. For retrieval tools (optional, recommended):
 winget install OpenJS.NodeJS.LTS UniversalCtags.Ctags BurntSushi.ripgrep.MSVC
 npm install -g @tobilu/qmd
@@ -130,6 +131,12 @@ QMD_LLAMA_GPU=none qmd embed   # one-time, ~2GB of GGUF models download
 
 All memory files use YAML frontmatter with hierarchical tags (`memory/l0` / `memory/l1` / `memory/l2` / `memory/repo`). Open `~/.claude/` or any repo's root as an Obsidian vault — graph view, tag filtering, full-text search across all your projects.
 
+`SESSION.md` carries `status: active` while a task is running; the distillation step sets `status: done` on task wrap-up. Obsidian Dataview query to show live sessions:
+
+```
+dataview TABLE last_updated WHERE status = "active"
+```
+
 ## Repo layout
 
 ```
@@ -141,12 +148,14 @@ memory/IDENTITY.md              — L0 template
 templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
-hooks/session-start.sh          — staleness + CWD mismatch + cwd auto-inject + privacy redaction + compression flag + qmd auto-refresh
+hooks/session-start.sh          — staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
 hooks/post-tool-use.sh          — selective auto-capture: git commit, CLAUDE.md writes, .claude-docs writes
 commands/{recall,codemap,memory,memstat}.md — slash command definitions
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
+bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
 IDEAS.md                        — prioritised backlog of future enhancements
 ```
