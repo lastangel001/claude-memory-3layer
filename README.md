@@ -131,6 +131,16 @@ universal-ctags + ripgrep. Cache at `<repo>/.codemap.tags` (gitignore-able). Aut
 /codemap outline
 ```
 
+### `/onboard` — Bootstrap memory for an existing project
+
+Scans the repo and creates `CLAUDE.md` + full `.claude-docs/` scaffold. Run once per project, from the repo root.
+
+Internally uses `bin/onboard-report.sh` to collect raw data (stack files, directory structure, git log, hot files, FIXME/HACK grep), then instructs Claude to reason over the output and create all memory files. Does not commit — user reviews first.
+
+```
+/onboard
+```
+
 ### `/memory status | auto on|off | refresh` — protocol controls
 
 Default mode is **explicit-promotion** — cross-session memory only when the user says "remember"/"запомни". Toggle to auto-capture per-session if you want it.
@@ -245,9 +255,14 @@ templates/project.md.fallback.template — L1-fallback template (account-local)
 hooks/session-start.sh          — staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
 hooks/post-tool-use.sh          — selective auto-capture: git commit, CLAUDE.md writes, .claude-docs writes
-commands/{recall,codemap,memory,memstat}.md — slash command definitions
+commands/recall.md              — /recall slash command (hybrid memory search)
+commands/codemap.md             — /codemap slash command (symbol map)
+commands/memory.md              — /memory slash command (mode controls)
+commands/memstat.md             — /memstat slash command (memory subsystem status)
+commands/onboard.md             — /onboard slash command: scan repo, create CLAUDE.md + .claude-docs/
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)

@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.10.0 — 2026-05-27 — /onboard command + onboard-report.sh
+
+**Added**
+- **`/onboard` slash command** (`commands/onboard.md`). Bootstraps Claude Code memory for an existing project in 4 steps: run `onboard-report.sh`, analyse output, create `CLAUDE.md` + `.claude-docs/` scaffold (architecture, conventions, gotchas, index), report gaps to user. Does not commit — user reviews first.
+- **`bin/onboard-report.sh`** — collects raw repo data for `/onboard`: stack files (package.json, composer.json, pyproject.toml…), directory structure, entry points, config files, git log (last 50), most-changed files (last 6 months), FIXME/HACK/WORKAROUND inline comment grep, `@deprecated` markers. Cross-platform (macOS/Linux/Windows Git Bash); gracefully degrades when `tree` is not available.
+
+**Changed**
+- `install.sh`: installs `commands/onboard.md` and `bin/onboard-report.sh`.
+- `README.md`: `/onboard` added to Tools section; repo layout entries expanded from glob to per-file.
+
 ## v6.9.1 — 2026-05-27 — README: scenarios + trigger table
 
 **Changed**
