@@ -77,9 +77,11 @@ Do this even if a SessionStart hook also fires — idempotent.
    CLAUDE_SESSION_COMPRESS=0 claude
    ```
    When disabled, the SessionStart and PreCompact hooks tell the model to write prose naturally. The flag is checked on every hook fire — no restart needed.
-   - After every decision: append to `# Decisions` with rationale
-   - After every meaningful action: update `# State` (last action, next step)
-   - After identifying a key file: append to `# File map` with `path:line — what`
+   - **`# Decisions`** — write when: chose X over Y (reason matters for future); tried X, failed (reason known); discovered constraint that changes approach; rejected obvious solution intentionally. Skip: trivial implementation choices with no tradeoff.
+   - **`# State`** — update after each task chunk completes, on block/unblock, on branch change. Keep to: last action + next step.
+   - **`# File map`** — write when: file is non-obvious source of truth; file has unexpected role (name misleads); non-obvious cross-file dependency. Skip: files with self-evident purpose (`UserController`, `routes/api.php`).
+   - **`.claude-docs/gotchas.md`** — write immediately, no "запомни" needed, when: behavior contradicts docs or intuition; "looks right but breaks"; "looks wrong but is intentional"; silent failure (no error, wrong result); platform-specific quirk.
+   - **Quick test:** *"Without this fact, would a future agent make a worse decision or repeat work?"* — yes → write; no → skip.
    - Open questions and blockers get their own sections
    - **Ad-hoc sections are encouraged.** When a phase of work deserves its own block (e.g. "Прогон 2026-05-07", "Design session 2026-05-06", "WEB FIX <hash>"), add it. The template is a floor, not a ceiling.
 5. **PreCompact = mandatory flush.** Before compaction: write everything you'd need to resume to SESSION.md. The hook will remind you. After compact, your first action is `Read SESSION.md`.

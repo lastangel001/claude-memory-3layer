@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.9.0 — 2026-05-27 — Sharp SESSION.md write triggers
+
+**Changed**
+- **`CLAUDE.md` — sharper write-trigger criteria for SESSION.md.** Replaced the vague "after every meaningful action" rule with explicit per-section triggers:
+  - `# Decisions`: write when chose X over Y, tried X and failed, discovered constraint, rejected obvious solution intentionally. Skip trivial implementation choices.
+  - `# State`: update after each task chunk, on block/unblock, on branch change. Last action + next step only.
+  - `# File map`: write for non-obvious source of truth, unexpected file role, non-obvious cross-file dependency. Skip self-evident files.
+  - `.claude-docs/gotchas.md`: write immediately (no "запомни") when behavior contradicts intuition/docs, silent failure, platform quirk, "looks right but breaks" / "looks wrong but intentional".
+  - Added **quick test**: *"Without this fact, would a future agent make a worse decision or repeat work?"* — yes → write; no → skip.
+
 ## v6.8.0 — 2026-05-26 — One-step updater, version tracking
 
 **Added**
