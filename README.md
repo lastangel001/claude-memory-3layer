@@ -34,6 +34,81 @@ Codebase facts go with the codebase. Personal preferences and per-task scratch s
 
 The killer move is **`<repo>/.claude-docs/gotchas.md`** — every non-obvious footgun goes here. *"Looks right but breaks"* / *"Looks wrong but is intentional"*. One paragraph each. Future sessions hit the same wall and benefit immediately.
 
+## Memory in action
+
+### Cross-session continuity
+
+You work on an auth module Monday, stop mid-task. SESSION.md at end of day:
+
+```markdown
+# Goal
+Add rate limiting to /login endpoint
+
+# State
+- branch: feat/auth-ratelimit
+- last: extracted JWT validation to src/auth/middleware.ts
+- next: wire RateLimiter into middleware chain
+
+# Decisions
+- [14:30] JWT over session cookies — stateless, horizontal scale
+- [14:45] dropped express-rate-limit — no Redis cluster failover handling
+
+# File map
+- src/auth/middleware.ts:42 — token validation, rate limit hook point
+- src/auth/config.ts:8 — TTL constants (hardcoded intentionally, see gotchas)
+```
+
+Tuesday, new session opens. SessionStart hook injects SESSION.md. Claude knows: what's done, what's next, why JWT, why not `express-rate-limit`, where to look. **No briefing needed.**
+
+---
+
+### Gotcha discovered → written immediately
+
+Claude notices `hasMany` relationships in Laravel return soft-deleted records silently. Writes to `.claude-docs/gotchas.md` without being asked:
+
+```markdown
+## Laravel: soft-delete not applied to relationship queries
+
+`hasMany`/`belongsToMany` don't apply global scope by default.
+`$user->posts` includes soft-deleted posts with no warning.
+
+Fix: `withoutTrashed()` explicitly, or override `newQuery()` in the model.
+```
+
+Every future session in this repo has this before writing any relationship query. Same wall — never hit twice.
+
+---
+
+### Decision with tradeoff → captured with rationale
+
+After choosing UUID v7 over v4:
+
+```markdown
+# Decisions
+- [10:15] UUID v7 over v4 — cursor pagination needs time-ordered inserts; v4 random = index fragmentation at scale
+```
+
+Three months later, new session asks "why UUIDs?". Answer is in Decisions. No re-research. No accidental suggestion to switch back.
+
+---
+
+### Compact / context reset → zero loss
+
+Context fills mid-task. PreCompact hook fires, reminds Claude to flush. Claude writes full state to SESSION.md including verbatim recent turns. After compact, first read is SESSION.md — resumes same branch, same next step, same rationale intact.
+
+---
+
+### What does NOT get saved
+
+- ✗ Read a file, found expected content → no new knowledge
+- ✗ Ran grep → intermediate step, derivable from code
+- ✗ Obvious implementation detail → visible in diff
+- ✗ Trivial choice with no tradeoff → no future impact
+
+**Quick test:** *"Without this, would a future agent make a worse decision or repeat work?"* — no → don't write.
+
+---
+
 ## Tools (all local, no daemons)
 
 ### `/recall <query>` — hybrid memory search
@@ -76,6 +151,16 @@ Default mode is **explicit-promotion** — cross-session memory only when the us
   - `Write` to `**/.claude-docs/*.md` → notes L1b doc update
 
   Everything else is silently ignored — explicit-promotion philosophy preserved for all other events. JSON parsed via `python3 → node → jq → grep` fallback chain; run `bin/doctor.sh` to see which parser is active on your system.
+
+Beyond hook-driven capture, the protocol instructs Claude to write to SESSION.md on specific triggers — no "remember" needed:
+
+| What happened | Where it goes |
+|---|---|
+| Chose X over Y (reason matters) | `SESSION.md # Decisions` |
+| Tried X, failed — reason known | `SESSION.md # Decisions` |
+| Behavior contradicts docs/intuition | `.claude-docs/gotchas.md` |
+| "Looks right but breaks" / "looks wrong but intentional" | `.claude-docs/gotchas.md` |
+| File has non-obvious role or cross-file dependency | `SESSION.md # File map` |
 
 All three hooks run in `set -euo pipefail` strict mode. Any unguarded failure is logged to `~/.claude/debug/hook-trace.log` with `rc` + line number, and a fallback message is emitted — hooks never block session start or tool execution.
 

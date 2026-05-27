@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.9.1 — 2026-05-27 — README: scenarios + trigger table
+
+**Changed**
+- **README: "Memory in action" section.** Four concrete scenarios with actual file content: cross-session continuity, gotcha discovered, decision with tradeoff, compact/context reset. Includes "what does NOT get saved" list and quick test heuristic.
+- **README: model write-trigger table in Hooks section.** Documents what Claude writes automatically beyond the 3 hook-captured events (Decisions, gotchas.md, File map) with explicit trigger criteria per row.
+
 ## v6.9.0 — 2026-05-27 — Sharp SESSION.md write triggers
 
 **Changed**
