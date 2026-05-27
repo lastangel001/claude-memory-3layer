@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.10.1 — 2026-05-27 — /onboard: include project docs in scan
+
+**Changed**
+- **`bin/onboard-report.sh`**: new section 2 "Project documentation" — reads README (up to 120 lines), CONTRIBUTING, and up to 3 architecture/overview/setup files from `docs/` / `doc/` / `documentation/` / `wiki/` folders. Also lists all `.md`/`.rst`/`.txt` files in docs folders. Remaining sections renumbered 3–9.
+- **`commands/onboard.md`**: Step 1 updated to describe that docs are now in the report (no more manual "also read"). Step 2 adds explicit instructions to use README/docs for architecture pattern and CONTRIBUTING.md for conventions.
+
 ## v6.10.0 — 2026-05-27 — /onboard command + onboard-report.sh
 
 **Added**

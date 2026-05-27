@@ -31,7 +31,64 @@ for f in package.json composer.json pyproject.toml go.mod Cargo.toml \
 done
 [[ $_found_stack -eq 0 ]] && printf '(no recognised stack files found)\n'
 
-# ─── 2. Directory structure ───────────────────────────────────────────────────
+# ─── 2. Project documentation ────────────────────────────────────────────────
+sep "Project documentation"
+
+# README (first found wins)
+_readme_shown=0
+for f in README.md README.rst README.txt readme.md; do
+  if [[ -f "$f" && $_readme_shown -eq 0 ]]; then
+    printf '### %s\n```\n' "$f"
+    head -120 "$f"
+    printf '```\n'
+    _lines=$(wc -l < "$f" | tr -d ' \t\r')
+    [[ "$_lines" -gt 120 ]] && printf '_(truncated at 120 lines — %s total)_\n' "$_lines"
+    printf '\n'
+    _readme_shown=1
+  fi
+done
+[[ $_readme_shown -eq 0 ]] && printf '(no README found)\n\n'
+
+# CONTRIBUTING
+for f in CONTRIBUTING.md CONTRIBUTING.rst CONTRIBUTING.txt; do
+  if [[ -f "$f" ]]; then
+    printf '### %s\n```\n' "$f"
+    head -80 "$f"
+    printf '```\n\n'
+    break
+  fi
+done
+
+# docs/ folder — list + key file content
+_found_docs=0
+for d in docs doc documentation wiki manual manuals guide guides \
+          api-docs api_docs spec specs design designs pages .docs; do
+  if [[ -d "$d" ]]; then
+    _found_docs=1
+    printf '### %s/ — file listing\n' "$d"
+    find "$d" -type f \( -name "*.md" -o -name "*.rst" -o -name "*.txt" \) \
+      | sort | head -40 | sed 's|^\./||'
+    printf '\n'
+
+    # Read up to 3 architecture/overview/setup files
+    printf '### %s/ — key file content\n\n' "$d"
+    _doc_count=0
+    while IFS= read -r _df; do
+      [[ $_doc_count -ge 3 ]] && break
+      printf '#### %s\n```\n' "$_df"
+      head -80 "$_df"
+      printf '```\n\n'
+      _doc_count=$((_doc_count + 1))
+    done < <(
+      find "$d" -type f -name "*.md" \
+        | grep -iE 'architect|overview|design|setup|install|getting.start|structure|readme|index' \
+        | sort | head -5
+    )
+  fi
+done
+[[ $_found_docs -eq 0 ]] && printf '(no docs/ documentation/ wiki/ folder found)\n'
+
+# ─── 3. Directory structure (depth 2) ────────────────────────────────────────
 sep "Directory structure (depth 2)"
 _IGNORE='.git|node_modules|vendor|__pycache__|.venv|dist|build|.next|coverage|.idea|.vscode'
 if command -v tree >/dev/null 2>&1; then
@@ -43,7 +100,7 @@ else
     ! -path './build/*' | sort | sed 's|^\./||'
 fi
 
-# ─── 3. Entry points ─────────────────────────────────────────────────────────
+# ─── 4. Entry points ─────────────────────────────────────────────────────────
 sep "Likely entry points"
 _found_ep=0
 for f in \
@@ -60,7 +117,7 @@ for f in \
 done
 [[ $_found_ep -eq 0 ]] && printf '(none of the common entry points found)\n'
 
-# ─── 4. Config / env files ───────────────────────────────────────────────────
+# ─── 5. Config / env files ───────────────────────────────────────────────────
 sep "Config and env files"
 _found_cfg=0
 for f in \
@@ -78,11 +135,11 @@ for f in \
 done
 [[ $_found_cfg -eq 0 ]] && printf '(no common config files found)\n'
 
-# ─── 5. Git history ──────────────────────────────────────────────────────────
+# ─── 6. Git history ──────────────────────────────────────────────────────────
 sep "Recent git history (last 50 commits)"
 git log --oneline -50 2>/dev/null || printf '(no git history)\n'
 
-# ─── 6. Hot files ────────────────────────────────────────────────────────────
+# ─── 7. Hot files ────────────────────────────────────────────────────────────
 sep "Most-changed files (last 6 months)"
 git log --since='6 months ago' --format=format: --name-only 2>/dev/null \
   | grep -v '^[[:space:]]*$' \
@@ -90,7 +147,7 @@ git log --since='6 months ago' --format=format: --name-only 2>/dev/null \
   | head -20 \
   || printf '(no history in last 6 months)\n'
 
-# ─── 7. Gotcha patterns ──────────────────────────────────────────────────────
+# ─── 8. Gotcha patterns ──────────────────────────────────────────────────────
 sep "Inline comments: FIXME / HACK / WORKAROUND / DO NOT / XXX"
 grep -rEn 'FIXME|HACK|WORKAROUND|DO NOT|XXX[^X]|IMPORTANT:' \
   --include='*.php' --include='*.ts' --include='*.tsx' \
@@ -102,7 +159,7 @@ grep -rEn 'FIXME|HACK|WORKAROUND|DO NOT|XXX[^X]|IMPORTANT:' \
   . 2>/dev/null | head -60 \
   || printf '(none found)\n'
 
-# ─── 8. Deprecated / annotated TODOs ─────────────────────────────────────────
+# ─── 9. Deprecated / annotated TODOs ─────────────────────────────────────────
 sep "@deprecated and TODO with context"
 grep -rEn '@deprecated|TODO\s*\(' \
   --include='*.php' --include='*.ts' --include='*.tsx' \

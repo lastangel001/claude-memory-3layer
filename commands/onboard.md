@@ -9,17 +9,19 @@ Run from the project root.
 bash "${CLAUDE_HOME:-$HOME/.claude}/bin/onboard-report.sh"
 ```
 
-Read every line of output before writing anything. Also read: `README.md`,
-`CONTRIBUTING.md`, any existing `docs/` folder.
+Read every line of output before writing anything. The report includes:
+README, CONTRIBUTING, docs/ folder content (up to 3 key files), stack files,
+directory structure, git log, hot files, FIXME/HACK grep, `@deprecated`.
 
 ## Step 2 — Analyse
 
 From the report, determine:
 - **Language + framework** (stack files, entry points)
-- **Architecture pattern** (MVC, hexagonal, monolith, microservices…)
+- **Architecture pattern** (MVC, hexagonal, monolith, microservices…) — use README + docs/ if present; they often describe design decisions code doesn't reveal
 - **Test runner + lint tooling**
 - **Hot files** — what changes most, and why?
-- **Real gotchas** — from FIXME/HACK grep: which are non-obvious to a new dev?
+- **Real gotchas** — from FIXME/HACK grep + docs "known issues" / "caveats" sections: which are non-obvious to a new dev?
+- **Existing conventions** — check CONTRIBUTING.md first; it often has commit format, PR rules, coding standards already written
 
 ## Step 3 — Create files
 
