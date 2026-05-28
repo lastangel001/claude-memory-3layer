@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.2.4 — 2026-05-28 — Cross-platform portability (installer ships what's actually in the tree)
+
+**Fixed**
+- **`install.sh` was silently dropping files.** The script enumerated `hooks/`, `commands/` and `bin/` members by hardcoded name (`backup_and_install "$SRC/hooks/session-start.sh" ...` × N). Anything added to the tree later was never copied on a fresh install or upgrade — at v6.2.3 three files were affected. Replaced the per-file lists with directory-walk loops over `"$SRC/hooks/"*.sh`, `"$SRC/commands/"*.md`, `"$SRC/bin/"*.sh`, so `install.sh` now ships whatever is actually in the source tree, no list to forget to update.
+- **`bin/memstat.sh` PROCESSES and HEALTH were Windows-only.** `get_procs()` and `get_cpu_time()` shelled out to `powershell.exe` unconditionally; on Linux/macOS the section always reported "idle" even while qmd was running, and HEALTH could never sample a CPU-time delta to detect stall. Added `uname -s` platform detection with a `ps`-based fallback for non-Windows. Affects `bin/memstat.sh`.
+- **Hardcoded maintainer paths.** `hooks/session-start.sh` had two `/c/Users/greev/.claude/...` literals, and `commands/{codemap,memory,memstat,recall}.md` had `bash /c/Users/greev/.claude/bin/...` examples — copy-paste landmines for anyone who isn't the maintainer. Hook switched to the portable `$CLAUDE_HOME` (already defined as `${CLAUDE_HOME:-$HOME/.claude}`); docs switched to `bash ~/.claude/bin/...`.
+- **CRLF on shell scripts under Windows Git defaults.** Added `.gitattributes` enforcing LF for `*.sh`, `hooks/*`, `bin/*`, `install.sh`, `migrate.sh`. Without it, any Windows Git client with `core.autocrlf=true` (the default on Git for Windows) silently converts shell scripts to CRLF on checkout, which breaks the `#!/usr/bin/env bash` shebang on WSL/Linux (`/usr/bin/env: 'bash\r': No such file or directory`). Existing checkouts with CRLF need a re-checkout (`git rm --cached -r . && git reset --hard HEAD`) for the rule to take effect.
+
+**Added**
+- **`README.ru.md`** — Russian-language overview of the 3-layer protocol: why it exists, layer-by-layer walkthrough (L0/L1a/L1b/L1-fallback/L2), install + upgrade flow, retrieval tools (`/recall`, `/codemap`, `/memstat`, `/memory`), Obsidian-vault use, and what does NOT go into memory.
+- **INSTALL.md: nvm gotcha callout.** Claude Code's `Bash` tool runs a **non-interactive** shell that does not source `~/.bashrc`, so nvm's PATH injection is invisible — `node --version` works in your terminal but `qmd` (shebanged `#!/usr/bin/env node`) fails with `node: not found` inside Claude Code sessions. Documented in the qmd install section and in Troubleshooting, with the recommended fix: drop stable symlinks for `node`/`npm`/`npx` into `~/.local/bin` (on PATH unconditionally on Ubuntu 17.10+, Fedora, Arch), or install Node system-wide via NodeSource.
+
 ## v6.2.3 — 2026-05-21 — memstat process detection actually works
 
 **Fixed**
