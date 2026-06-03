@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.11.1 — 2026-05-29 — Fix false "settings.json invalid JSON" on Windows
+
+**Fixed**
+- **`install.sh` + `bin/doctor.sh` JSON validation.** Both reported `✗ settings.json invalid JSON` on Windows Git Bash even when the file was valid. Cause: validators passed the MSYS path (`/c/Users/…/settings.json`) as a string arg to Windows-native `node`/`python3`, which cannot resolve `/c/...` → `ENOENT` → false failure. Fix: pipe the file through `cat` into the interpreter's stdin (`readFileSync(0)` / `sys.stdin`) so the interpreter never touches the path; bash resolves it for `cat`. Cross-platform. Documented in `.claude-docs/gotchas.md`.
+
 ## v6.11.0 — 2026-05-29 — /onboard: full-capture, no truncation
 
 **Changed**

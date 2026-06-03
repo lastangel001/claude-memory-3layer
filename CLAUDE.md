@@ -317,3 +317,4 @@ Post-compact / post-restart: first tool calls are `Read ~/.claude/memory/IDENTIT
 | Task | Read |
 |---|---|
 | Making a commit — what to update | `.claude-docs/dev-workflow.md` |
+| Editing install.sh / doctor.sh / any Windows-path handling | `.claude-docs/gotchas.md` |

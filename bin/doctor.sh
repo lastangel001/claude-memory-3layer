@@ -75,10 +75,12 @@ if [[ ! -f "$sf" ]]; then
 else
   # Validate JSON
   json_ok=0
+  # Pipe via stdin — Windows-native node/python can't resolve MSYS '/c/...' paths
+  # passed as string args (false "invalid JSON"). bash resolves the path for cat.
   if command -v node >/dev/null 2>&1; then
-    node -e "JSON.parse(require('fs').readFileSync('$sf','utf8'))" 2>/dev/null && json_ok=1
+    cat "$sf" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))" 2>/dev/null && json_ok=1
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -c "import json; json.load(open('$sf'))" 2>/dev/null && json_ok=1
+    cat "$sf" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null && json_ok=1
   fi
   if [[ $json_ok -eq 1 ]]; then
     ok "$sf valid JSON"

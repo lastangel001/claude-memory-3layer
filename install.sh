@@ -170,14 +170,16 @@ if [[ $DRY_RUN -eq 0 ]]; then
   say "Validation:"
 
   # 1. settings.json is valid JSON
+  # Pipe via stdin — Windows-native node/python can't resolve MSYS '/c/...' paths
+  # passed as string args (false "invalid JSON"). bash resolves the path for cat.
   if command -v node >/dev/null 2>&1; then
-    if node -e "JSON.parse(require('fs').readFileSync('$CLAUDE_HOME/settings.json','utf8'))" 2>/dev/null; then
+    if cat "$CLAUDE_HOME/settings.json" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))" 2>/dev/null; then
       say "  ✓ settings.json valid JSON"
     else
       say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
     fi
   elif command -v python3 >/dev/null 2>&1; then
-    if python3 -c "import json; json.load(open('$CLAUDE_HOME/settings.json'))" 2>/dev/null; then
+    if cat "$CLAUDE_HOME/settings.json" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
       say "  ✓ settings.json valid JSON"
     else
       say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
