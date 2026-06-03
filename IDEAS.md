@@ -36,6 +36,7 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `/onboard` full-capture on first run (`bin/onboard-report.sh`: removed docs/ regex filter + 3-file cap; README/docs/stack files read with `cat` not `head` — maximal one-time capture, later sessions run from memory)
 - [x] Fix false "settings.json invalid JSON" on Windows (`install.sh` + `doctor.sh`: pipe file via `cat` to node/python stdin — Windows-native interpreters can't resolve MSYS `/c/...` path args; see gotchas.md)
 - [x] `/onboard` enrichment from Understand-Anything concepts: architecture-layer classification (API/Service/Data/UI/Utility) + dependency-ordered guided tour (reading order) + self-review validation step (`commands/onboard.md`); symbol outline via existing `codemap.sh outline` fed into `onboard-report.sh` (graceful degrade)
+- [x] `/onboard` evolutionary update (incremental re-onboard, no data loss): `.claude-docs/.onboard-rev` marker + delta-aware report (commits / changed files / stale-doc hints since last onboard) → UPDATE mode patches existing docs surgically instead of overwriting; preserves hand-edits
 
 ---
 
@@ -64,20 +65,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 **How:** Add a directive to `commands/onboard.md` Step 2 ("for app projects, trace 1–3 primary business flows from entry point through services") + a `## Business flows` template section. Skip for libraries/tools. Pure LLM reasoning, no new tooling.
 
 **Deferred from:** v6.12.0 scoping (kept lean — A+B shipped, C deferred).
-
----
-
-### M/M — `/onboard` incremental re-onboard delta
-
-**What:** On re-running `/onboard`, detect what changed since the last run and flag which `.claude-docs/` sections may be stale, instead of regenerating blindly.
-
-**Why:** After the first bootstrap, a full re-scan is wasteful and overwrites hand-edited docs. Teams want "what drifted since last onboard?". Analog of Understand-Anything's fingerprint-based incremental graph patching.
-
-**How:** `onboard-report.sh` writes the current commit hash to a marker (e.g. `.claude-docs/.onboard-rev`). On re-run, if the marker exists, add a section: `git diff <marker>..HEAD --stat` → map changed paths to likely-stale docs (e.g. `src/` churn → architecture.md; new `*.test.*` → conventions.md). `commands/onboard.md` gets an "update mode" branch that patches rather than rewrites.
-
-**Tradeoff:** More branching logic in onboard.md; must not clobber user edits. Medium effort.
-
-**Deferred from:** v6.12.0 scoping.
 
 ---
 

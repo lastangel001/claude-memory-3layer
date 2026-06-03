@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.13.0 — 2026-05-29 — /onboard: evolutionary update (incremental re-onboard, no data loss)
+
+`/onboard` is now **idempotent-friendly**: re-running it on a project that was already onboarded patches the existing memory instead of overwriting it. Hand-edits survive. (Implements deferred idea D.)
+
+**Added**
+- **Onboard revision marker** — `/onboard` writes `.claude-docs/.onboard-rev` (git-tracked: `rev` + `date`) at the end of every run (`commands/onboard.md` Step 5).
+- **Delta-aware report** (`bin/onboard-report.sh`, new section 0). If the marker exists → **UPDATE mode**: emits commits (`git log rev..HEAD`), changed files (`git diff rev --stat`), and heuristic **stale-doc hints** (changed deps → architecture.md, test files → conventions.md, CI → conventions/architecture, docs → all). No marker → **FIRST RUN** banner. Guards against rebase/shallow/non-git (falls back to full refresh but still preserves hand-edits). Safe under `set -euo pipefail`.
+- **UPDATE path in `/onboard`** (`commands/onboard.md`). New "Mode" section + Step 3 update path: read existing docs first, patch only what the delta implies, additive by default, loss-aversion rule ("when unsure whether a line is a hand-edit worth keeping — keep it"). Self-review gains a "(UPDATE) no content lost" check (diff against pre-existing docs; every removal must be justified). Step 4 report becomes a changelog in update mode.
+
 ## v6.12.0 — 2026-05-29 — /onboard: layers, guided tour, symbol outline, self-review
 
 Concepts ported from [Understand-Anything](https://github.com/Lum1104/Understand-Anything) (a heavy Tree-sitter + knowledge-graph plugin) — adapted as lightweight markdown/bash, no new infrastructure.

@@ -17,6 +17,44 @@ sep() { printf '\n---\n\n## %s\n\n' "$1"; }
 printf '# Onboard report — %s\n' "$(basename "$REPO_ROOT")"
 printf '_Generated: %s_\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
+# ─── 0. Onboard mode: first-run vs update (delta since last onboard) ──────────
+# Reads .claude-docs/.onboard-rev (written by /onboard at the end of a run).
+# UPDATE mode → emit the delta since that revision so /onboard patches instead
+# of rewriting, preserving hand-edited docs (evolutionary update, no data loss).
+_marker=".claude-docs/.onboard-rev"
+_in_git=0; git rev-parse --git-dir >/dev/null 2>&1 && _in_git=1 || true
+if [[ -f "$_marker" ]]; then
+  _last_rev=$(grep -m1 '^rev:' "$_marker" 2>/dev/null | awk '{print $2}' || true)
+  _last_date=$(grep -m1 '^date:' "$_marker" 2>/dev/null | awk '{print $2}' || true)
+  printf '\n---\n\n## Onboard mode: UPDATE\n\n'
+  printf 'Existing memory detected (`%s`). Last onboard: `%s` @ %s\n\n' "$_marker" "${_last_rev:0:12}" "${_last_date:-?}"
+  printf '**Do NOT rewrite from scratch.** Patch existing CLAUDE.md + .claude-docs/ surgically; preserve hand-edits. Use the delta below to find what changed.\n\n'
+  if [[ $_in_git -eq 1 && -n "$_last_rev" ]] && git cat-file -e "${_last_rev}^{commit}" 2>/dev/null; then
+    printf '### Commits since last onboard\n```\n'
+    git log "${_last_rev}..HEAD" --oneline 2>/dev/null | head -50 || true
+    printf '```\n\n### Files changed since last onboard (rev → working tree)\n```\n'
+    git diff "${_last_rev}" --stat 2>/dev/null | head -60 || true
+    printf '```\n\n### Stale-doc hints (heuristic — verify against the diff)\n'
+    _changed=$(git diff "${_last_rev}" --name-only 2>/dev/null || true)
+    _hint() { if grep -qiE "$1" <<<"$_changed"; then printf -- '- %s\n' "$2"; fi; }
+    if [[ -n "$_changed" ]]; then
+      _hint 'package\.json|composer\.json|pyproject\.toml|go\.mod|Cargo\.toml|Gemfile|pom\.xml|build\.gradle' 'architecture.md — stack / dependencies changed'
+      _hint '(^|/)(src|app|lib|pkg|internal|services|controllers|models|domain)/' 'architecture.md — source structure / layers may have shifted; refresh reading order'
+      _hint 'test|spec|__tests__' 'conventions.md — test files changed (naming / placement)'
+      _hint '\.github/|Dockerfile|docker-compose|Makefile|\.gitlab-ci|Jenkinsfile' 'architecture.md / conventions.md — build / CI changed'
+      _hint '(^|/)docs?/|README|CONTRIBUTING' 'all docs — project documentation changed; re-read for design / convention updates'
+    else
+      printf -- '- (no committed changes since last onboard — check working-tree edits below)\n'
+    fi
+    printf '\n'
+  else
+    printf '_(last onboard rev `%s` not found in git history — rebase / shallow clone / non-git? Treat as full refresh but STILL preserve existing hand-edited docs.)_\n\n' "${_last_rev:-none}"
+  fi
+else
+  printf '\n---\n\n## Onboard mode: FIRST RUN\n\n'
+  printf 'No `%s` marker — no prior onboard. Create memory from scratch.\n\n' "$_marker"
+fi
+
 # ─── 1. Stack detection ───────────────────────────────────────────────────────
 sep "Stack files"
 _found_stack=0

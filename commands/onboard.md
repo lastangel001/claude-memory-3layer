@@ -14,6 +14,17 @@ README, CONTRIBUTING, full docs/ folder content (every file, no cap), stack file
 directory structure, entry points, symbol outline (classes/functions via codemap —
 if ctags/ripgrep installed), git log, hot files, FIXME/HACK grep, `@deprecated`.
 
+The first block of the report is **"Onboard mode"** — read it now, it decides everything below.
+
+## Mode — first run vs update
+
+The report's mode block says one of two things:
+
+- **FIRST RUN** — no prior onboard. Create all memory files from scratch (Step 3, create path).
+- **UPDATE** — memory already exists (`.claude-docs/.onboard-rev` present). The report includes a **delta** (commits + changed files + stale-doc hints since the last onboard). Do **NOT** rewrite from scratch — this is an *evolutionary* update: **patch surgically, preserve every hand-edit.** Follow Step 3's update path.
+
+Either way, finish with Step 5 to refresh the revision marker.
+
 ## Step 2 — Analyse
 
 From the report, determine:
@@ -26,11 +37,24 @@ From the report, determine:
 - **Real gotchas** — from FIXME/HACK grep + docs "known issues" / "caveats" sections: which are non-obvious to a new dev?
 - **Existing conventions** — check CONTRIBUTING.md first; it often has commit format, PR rules, coding standards already written
 
-## Step 3 — Create files
+## Step 3 — Create or update files
 
 **Only write what you actually found. Do not fabricate.**
 
 If a section has no real content, write the header + `(none found — populate during work)`.
+
+### UPDATE path (mode = UPDATE) — patch, don't clobber
+
+When the report says UPDATE mode, the templates below are **targets to reconcile against**, not blank files to overwrite:
+
+1. **Read each existing file first** (`CLAUDE.md`, every `.claude-docs/*.md`). Treat current content as authoritative.
+2. **Only touch what the delta implies.** Use the report's "Stale-doc hints" + changed-files list to decide which docs are affected. Leave untouched docs exactly as they are.
+3. **Preserve hand-edits.** Never delete a human-written line unless the code now contradicts it (e.g. a documented command that no longer exists). When you remove or rewrite a factual claim, it must be because the delta proves it stale — say so in the change report (Step 4).
+4. **Additive by default.** New layers, new modules, new gotchas, new conventions → append / extend. Existing structure stays.
+5. **Refresh derived sections** when structure changed: the Layers table and Reading order in `architecture.md` (if dirs/entry points moved), stack version in `architecture.md`, new `gotchas.md` entries from new FIXME/HACK.
+6. When unsure whether a line is a hand-edit worth keeping — **keep it.** Loss-aversion is the rule here.
+
+For **FIRST RUN** mode, just create each file from the templates below.
 
 ### `CLAUDE.md` (≤60 lines — thin entry point)
 
@@ -131,6 +155,7 @@ Before reporting, run an integrity pass over what you just wrote. Fix issues, th
 - **Sections complete** — each template section is either filled or explicitly marked empty. No dangling placeholders like `<command>`.
 - **Thin entry point** — `CLAUDE.md` is ≤ 60 lines. Move detail into `.claude-docs/` if it overflows.
 - **Layers + reading order present** — `architecture.md` has both the Layers table and Reading order (or a note why N/A, e.g. single-file project).
+- **(UPDATE mode) No content lost** — diff your changes against the pre-existing docs (`git diff` on the doc files). Confirm every removal is justified by the delta. If you can't justify a deletion, restore it.
 
 ## Step 4 — Report to user
 
@@ -140,4 +165,20 @@ After creating all files, output:
 - **Hottest files**: top 5 from git log + one-line hypothesis for each
 - **Gaps**: what couldn't be determined from static analysis (flag for human input)
 
-**Do NOT commit.** Say: *"Review the files, then: `git add CLAUDE.md .claude-docs/ && git commit -m 'docs: bootstrap Claude Code memory'`"*
+In UPDATE mode, frame the report as a **changelog**: what changed since the last onboard, which docs you patched, and (explicitly) any line you removed + why.
+
+## Step 5 — Persist the onboard revision
+
+Write the marker so the **next** `/onboard` can compute its delta. Run from the repo root:
+
+```bash
+mkdir -p .claude-docs
+{ printf '# .claude-docs/.onboard-rev — last /onboard sync point. Auto-managed; commit with docs.\n'
+  printf 'rev: %s\n'  "$(git rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'date: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+} > .claude-docs/.onboard-rev
+```
+
+The marker is **git-tracked** — commit it with the docs so teammates' future updates measure drift from the team's last sync, not their local clone.
+
+**Do NOT commit automatically.** Say: *"Review the files, then: `git add CLAUDE.md .claude-docs/ && git commit -m 'docs: bootstrap Claude Code memory'`"* (first run) or *`'docs: update Claude Code memory (onboard delta)'`* (update).
