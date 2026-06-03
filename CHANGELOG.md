@@ -1,5 +1,18 @@
 # Changelog
 
+## v6.12.0 — 2026-05-29 — /onboard: layers, guided tour, symbol outline, self-review
+
+Concepts ported from [Understand-Anything](https://github.com/Lum1104/Understand-Anything) (a heavy Tree-sitter + knowledge-graph plugin) — adapted as lightweight markdown/bash, no new infrastructure.
+
+**Added**
+- **Architecture-layer classification** (`commands/onboard.md`). Step 2 now classifies every top-level dir/module into a layer (API / Service / Data / UI / Utility); `architecture.md` gets a **Layers** table. Analog of their `architecture-analyzer`.
+- **Guided tour / reading order** (`commands/onboard.md`). Step 2 derives a dependency-ordered learning path (entry point → core deps → leaf utilities, 5–10 stops); `architecture.md` gets a **Reading order (start here)** section. Analog of their `tour-builder`.
+- **Symbol outline in onboard report** (`bin/onboard-report.sh`). New section 5 calls the existing `bin/codemap.sh outline` (universal-ctags + ripgrep) to feed real class/function structure into `/onboard`. Degrades gracefully to a skip note when ctags/ripgrep aren't installed (guarded against `set -euo pipefail`). Sections 5–9 renumbered to 6–10.
+- **Self-review step** (`commands/onboard.md`, new Step 3.5). Before reporting, validates: doc-index links resolve, no fabricated content, sections complete, `CLAUDE.md` ≤60 lines, layers + reading order present. Analog of their `graph-reviewer`.
+
+**Fixed**
+- `commands/onboard.md` Step 1 description was stale (said docs read "up to 3 key files") — the 3-file cap was removed in v6.11.0. Now describes full-capture + symbol outline.
+
 ## v6.11.1 — 2026-05-29 — Fix false "settings.json invalid JSON" on Windows
 
 **Fixed**

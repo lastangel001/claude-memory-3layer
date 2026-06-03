@@ -135,7 +135,7 @@ universal-ctags + ripgrep. Cache at `<repo>/.codemap.tags` (gitignore-able). Aut
 
 Scans the repo and creates `CLAUDE.md` + full `.claude-docs/` scaffold. Run once per project, from the repo root.
 
-Internally uses `bin/onboard-report.sh` to collect raw data (stack files, directory structure, git log, hot files, FIXME/HACK grep, and full project documentation — README + every `docs/` file, read in full on first run), then instructs Claude to reason over the output and create all memory files. Does not commit — user reviews first.
+Internally uses `bin/onboard-report.sh` to collect raw data (stack files, directory structure, git log, hot files, FIXME/HACK grep, full project documentation — README + every `docs/` file read in full on first run — and a symbol outline of top-level classes/functions when `codemap` tools are present), then instructs Claude to reason over the output and create all memory files. The generated `architecture.md` includes an **architecture-layer table** (API/Service/Data/UI/Utility) and a dependency-ordered **reading order** ("start here") for new contributors; a self-review pass validates links and flags fabricated content before reporting. Does not commit — user reviews first.
 
 ```
 /onboard

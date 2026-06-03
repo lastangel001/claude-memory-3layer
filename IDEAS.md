@@ -35,6 +35,7 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Harden `migrate.sh` HTML-comment regex (allow leading whitespace before `<!--`; don't require closing `-->`; pattern stored in variable to avoid bash `<` parse error)
 - [x] `/onboard` full-capture on first run (`bin/onboard-report.sh`: removed docs/ regex filter + 3-file cap; README/docs/stack files read with `cat` not `head` — maximal one-time capture, later sessions run from memory)
 - [x] Fix false "settings.json invalid JSON" on Windows (`install.sh` + `doctor.sh`: pipe file via `cat` to node/python stdin — Windows-native interpreters can't resolve MSYS `/c/...` path args; see gotchas.md)
+- [x] `/onboard` enrichment from Understand-Anything concepts: architecture-layer classification (API/Service/Data/UI/Utility) + dependency-ordered guided tour (reading order) + self-review validation step (`commands/onboard.md`); symbol outline via existing `codemap.sh outline` fed into `onboard-report.sh` (graceful degrade)
 
 ---
 
@@ -51,6 +52,32 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 **How:** Node.js MCP server (~100 lines) that shells out to `qmd search`. No new storage layer — reuses existing markdown files and qmd index. Register in `settings.snippet.json` under `mcpServers`.
 
 **Tradeoff:** Adds a Node.js daemon. Must be optional and installable separately.
+
+---
+
+### M/S — `/onboard` domain / business-flow section
+
+**What:** Optional `architecture.md` block that maps code → real business processes (e.g. `checkout: cart → payment → order → fulfillment`), beyond the technical request→service→persistence flow.
+
+**Why:** Technical layers don't capture *what the product does*. A domain view helps a new agent reason about feature work, not just structure. Analog of Understand-Anything's `domain-analyzer`.
+
+**How:** Add a directive to `commands/onboard.md` Step 2 ("for app projects, trace 1–3 primary business flows from entry point through services") + a `## Business flows` template section. Skip for libraries/tools. Pure LLM reasoning, no new tooling.
+
+**Deferred from:** v6.12.0 scoping (kept lean — A+B shipped, C deferred).
+
+---
+
+### M/M — `/onboard` incremental re-onboard delta
+
+**What:** On re-running `/onboard`, detect what changed since the last run and flag which `.claude-docs/` sections may be stale, instead of regenerating blindly.
+
+**Why:** After the first bootstrap, a full re-scan is wasteful and overwrites hand-edited docs. Teams want "what drifted since last onboard?". Analog of Understand-Anything's fingerprint-based incremental graph patching.
+
+**How:** `onboard-report.sh` writes the current commit hash to a marker (e.g. `.claude-docs/.onboard-rev`). On re-run, if the marker exists, add a section: `git diff <marker>..HEAD --stat` → map changed paths to likely-stale docs (e.g. `src/` churn → architecture.md; new `*.test.*` → conventions.md). `commands/onboard.md` gets an "update mode" branch that patches rather than rewrites.
+
+**Tradeoff:** More branching logic in onboard.md; must not clobber user edits. Medium effort.
+
+**Deferred from:** v6.12.0 scoping.
 
 ---
 

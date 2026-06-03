@@ -10,14 +10,17 @@ bash "${CLAUDE_HOME:-$HOME/.claude}/bin/onboard-report.sh"
 ```
 
 Read every line of output before writing anything. The report includes:
-README, CONTRIBUTING, docs/ folder content (up to 3 key files), stack files,
-directory structure, git log, hot files, FIXME/HACK grep, `@deprecated`.
+README, CONTRIBUTING, full docs/ folder content (every file, no cap), stack files,
+directory structure, entry points, symbol outline (classes/functions via codemap —
+if ctags/ripgrep installed), git log, hot files, FIXME/HACK grep, `@deprecated`.
 
 ## Step 2 — Analyse
 
 From the report, determine:
 - **Language + framework** (stack files, entry points)
 - **Architecture pattern** (MVC, hexagonal, monolith, microservices…) — use README + docs/ if present; they often describe design decisions code doesn't reveal
+- **Architecture layers** — classify each top-level dir/module into a layer: **API / Service / Data / UI / Utility** (add project-specific ones like Worker, Domain if they fit). Note which layer each entry point sits in. Use the symbol outline section to see what each module actually contains.
+- **Reading order (guided tour)** — derive a dependency-ordered learning path: entry point → core modules it depends on → leaf utilities. 5–10 stops max, each with a one-line "why read this here". This is the path a new dev should follow.
 - **Test runner + lint tooling**
 - **Hot files** — what changes most, and why?
 - **Real gotchas** — from FIXME/HACK grep + docs "known issues" / "caveats" sections: which are non-obvious to a new dev?
@@ -64,6 +67,28 @@ Entry point for Claude Code agents. Deeper reference: [.claude-docs/](.claude-do
 - Entry points: HTTP handler, CLI, queue workers, cron
 - External dependencies: DB type, cache, queue, third-party APIs
 
+Add a **Layers** table (from the layer classification in Step 2):
+
+```markdown
+## Layers
+| Layer | Dirs / modules | Role |
+|---|---|---|
+| API | routes/, controllers/ | HTTP entry |
+| Service | services/ | business logic |
+| Data | models/, repositories/ | persistence |
+| UI | components/, views/ | presentation |
+| Utility | lib/, helpers/ | shared helpers |
+```
+
+Add a **Reading order** section (the guided tour from Step 2) — dependency-ordered, where a new dev should start:
+
+```markdown
+## Reading order (start here)
+1. `path` — <why first: entry point / orchestrator>
+2. `path` — <next: core dependency of #1>
+3. `path` — <leaf utility>
+```
+
 ### `.claude-docs/conventions.md`
 
 Derive from `git log` patterns + code structure:
@@ -96,6 +121,16 @@ found nothing — it fills in during real work.
 | Code style, naming, commit format | conventions.md |
 | Hit unexpected behavior | gotchas.md |
 ```
+
+## Step 3.5 — Self-review (validate before reporting)
+
+Before reporting, run an integrity pass over what you just wrote. Fix issues, then proceed:
+
+- **Links resolve** — every link in the `CLAUDE.md` doc-index and `index.md` points to a file you actually created.
+- **No fabrication** — every claim traces back to report data. Anything you couldn't determine is marked `(none found — populate during work)`, not invented.
+- **Sections complete** — each template section is either filled or explicitly marked empty. No dangling placeholders like `<command>`.
+- **Thin entry point** — `CLAUDE.md` is ≤ 60 lines. Move detail into `.claude-docs/` if it overflows.
+- **Layers + reading order present** — `architecture.md` has both the Layers table and Reading order (or a note why N/A, e.g. single-file project).
 
 ## Step 4 — Report to user
 

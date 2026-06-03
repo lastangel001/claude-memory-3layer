@@ -109,7 +109,23 @@ for f in \
 done
 [[ $_found_ep -eq 0 ]] && printf '(none of the common entry points found)\n'
 
-# ─── 5. Config / env files ───────────────────────────────────────────────────
+# ─── 5. Symbol outline ───────────────────────────────────────────────────────
+# Top-level classes / functions via codemap.sh (universal-ctags + ripgrep).
+# Optional tool — degrade gracefully if ctags/rg not installed.
+sep "Symbol outline (top-level classes / functions)"
+_codemap="${CLAUDE_HOME:-$HOME/.claude}/bin/codemap.sh"
+if [[ -f "$_codemap" ]]; then
+  _outline=$(bash "$_codemap" outline 2>/dev/null) || true
+  if [[ -n "$_outline" && "$_outline" != *"not found"* ]]; then
+    printf '```\n%s\n```\n' "$_outline"
+  else
+    printf '(codemap unavailable — universal-ctags / ripgrep not installed; skipped)\n'
+  fi
+else
+  printf '(codemap.sh not found — skipped)\n'
+fi
+
+# ─── 6. Config / env files ───────────────────────────────────────────────────
 sep "Config and env files"
 _found_cfg=0
 for f in \
@@ -127,11 +143,11 @@ for f in \
 done
 [[ $_found_cfg -eq 0 ]] && printf '(no common config files found)\n'
 
-# ─── 6. Git history ──────────────────────────────────────────────────────────
+# ─── 7. Git history ──────────────────────────────────────────────────────────
 sep "Recent git history (last 50 commits)"
 git log --oneline -50 2>/dev/null || printf '(no git history)\n'
 
-# ─── 7. Hot files ────────────────────────────────────────────────────────────
+# ─── 8. Hot files ────────────────────────────────────────────────────────────
 sep "Most-changed files (last 6 months)"
 git log --since='6 months ago' --format=format: --name-only 2>/dev/null \
   | grep -v '^[[:space:]]*$' \
@@ -139,7 +155,7 @@ git log --since='6 months ago' --format=format: --name-only 2>/dev/null \
   | head -20 \
   || printf '(no history in last 6 months)\n'
 
-# ─── 8. Gotcha patterns ──────────────────────────────────────────────────────
+# ─── 9. Gotcha patterns ──────────────────────────────────────────────────────
 sep "Inline comments: FIXME / HACK / WORKAROUND / DO NOT / XXX"
 grep -rEn 'FIXME|HACK|WORKAROUND|DO NOT|XXX[^X]|IMPORTANT:' \
   --include='*.php' --include='*.ts' --include='*.tsx' \
@@ -151,7 +167,7 @@ grep -rEn 'FIXME|HACK|WORKAROUND|DO NOT|XXX[^X]|IMPORTANT:' \
   . 2>/dev/null | head -60 \
   || printf '(none found)\n'
 
-# ─── 9. Deprecated / annotated TODOs ─────────────────────────────────────────
+# ─── 10. Deprecated / annotated TODOs ────────────────────────────────────────
 sep "@deprecated and TODO with context"
 grep -rEn '@deprecated|TODO\s*\(' \
   --include='*.php' --include='*.ts' --include='*.tsx' \
