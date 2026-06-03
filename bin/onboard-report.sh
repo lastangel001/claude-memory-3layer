@@ -25,7 +25,7 @@ for f in package.json composer.json pyproject.toml go.mod Cargo.toml \
   if [[ -f "$f" ]]; then
     _found_stack=1
     printf '### %s\n```\n' "$f"
-    head -60 "$f"
+    cat "$f"
     printf '```\n\n'
   fi
 done
@@ -39,11 +39,8 @@ _readme_shown=0
 for f in README.md README.rst README.txt readme.md; do
   if [[ -f "$f" && $_readme_shown -eq 0 ]]; then
     printf '### %s\n```\n' "$f"
-    head -120 "$f"
-    printf '```\n'
-    _lines=$(wc -l < "$f" | tr -d ' \t\r')
-    [[ "$_lines" -gt 120 ]] && printf '_(truncated at 120 lines — %s total)_\n' "$_lines"
-    printf '\n'
+    cat "$f"
+    printf '```\n\n'
     _readme_shown=1
   fi
 done
@@ -72,17 +69,12 @@ for d in docs doc documentation wiki manual manuals guide guides \
 
     # Read up to 3 architecture/overview/setup files
     printf '### %s/ — key file content\n\n' "$d"
-    _doc_count=0
     while IFS= read -r _df; do
-      [[ $_doc_count -ge 3 ]] && break
       printf '#### %s\n```\n' "$_df"
-      head -80 "$_df"
+      cat "$_df"
       printf '```\n\n'
-      _doc_count=$((_doc_count + 1))
     done < <(
-      find "$d" -type f -name "*.md" \
-        | grep -iE 'architect|overview|design|setup|install|getting.start|structure|readme|index' \
-        | sort | head -5
+      find "$d" -type f -name "*.md" | sort
     )
   fi
 done

@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.11.0 — 2026-05-29 — /onboard: full-capture, no truncation
+
+**Changed**
+- **`bin/onboard-report.sh` — maximal first-run capture.** First `/onboard` no longer truncates source material (later sessions run from memory, so the one-time token cost is worth it):
+  - **docs/ files**: removed the `architect|overview|design|setup|install|…` filename regex filter — every `*.md` in docs folders is now read, not just name-matched ones (`api_public.md`, `database.md`, `parsing_vk.md` were silently skipped before).
+  - **docs/ file count**: removed the 3-file cap — all matched docs are read.
+  - **docs/ file body**: `head -80` → `cat` (full file).
+  - **README**: `head -120` → `cat` (full file); dropped the "_(truncated at N lines)_" note.
+  - **Stack files** (`package.json`, `pyproject.toml`, …): `head -60` → `cat` (full file — extras/scripts/tool-config no longer cut off).
+
 ## v6.10.1 — 2026-05-27 — /onboard: include project docs in scan
 
 **Changed**
