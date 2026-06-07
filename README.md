@@ -131,16 +131,16 @@ universal-ctags + ripgrep. Cache at `<repo>/.codemap.tags` (gitignore-able). Aut
 /codemap outline
 ```
 
-### `/onboard` — Bootstrap memory for an existing project
+### `/onboard-memory` — Bootstrap memory for an existing project
 
 Scans the repo and creates `CLAUDE.md` + full `.claude-docs/` scaffold. Run once per project, from the repo root.
 
 Internally uses `bin/onboard-report.sh` to collect raw data (stack files, directory structure, git log, hot files, FIXME/HACK grep, full project documentation — README + every `docs/` file read in full on first run — and a symbol outline of top-level classes/functions when `codemap` tools are present), then instructs Claude to reason over the output and create all memory files. The generated `architecture.md` includes an **architecture-layer table** (API/Service/Data/UI/Utility) and a dependency-ordered **reading order** ("start here") for new contributors; a self-review pass validates links and flags fabricated content before reporting. Does not commit — user reviews first.
 
-**Re-running is safe.** `/onboard` records a revision marker (`.claude-docs/.onboard-rev`); on a second run it enters **update mode** — it computes the git delta since the last onboard and *patches* the existing docs (preserving hand-edits) instead of overwriting them. Knowledge evolves with the codebase, no data loss.
+**Re-running is safe.** `/onboard-memory` records a revision marker (`.claude-docs/.onboard-rev`); on a second run it enters **update mode** — it computes the git delta since the last onboard and *patches* the existing docs (preserving hand-edits) instead of overwriting them. Knowledge evolves with the codebase, no data loss.
 
 ```
-/onboard
+/onboard-memory
 ```
 
 ### `/memory status | auto on|off | refresh` — protocol controls
@@ -261,10 +261,10 @@ commands/recall.md              — /recall slash command (hybrid memory search)
 commands/codemap.md             — /codemap slash command (symbol map)
 commands/memory.md              — /memory slash command (mode controls)
 commands/memstat.md             — /memstat slash command (memory subsystem status)
-commands/onboard.md             — /onboard slash command: scan repo, create CLAUDE.md + .claude-docs/
+commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
-bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard
+bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard-memory
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)

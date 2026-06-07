@@ -72,7 +72,7 @@ backup_and_install "$SRC/commands/recall.md"           "$CLAUDE_HOME/commands/re
 backup_and_install "$SRC/commands/codemap.md"          "$CLAUDE_HOME/commands/codemap.md"
 backup_and_install "$SRC/commands/memory.md"           "$CLAUDE_HOME/commands/memory.md"
 backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/memstat.md"
-backup_and_install "$SRC/commands/onboard.md"          "$CLAUDE_HOME/commands/onboard.md"
+backup_and_install "$SRC/commands/onboard-memory.md"   "$CLAUDE_HOME/commands/onboard-memory.md"
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"

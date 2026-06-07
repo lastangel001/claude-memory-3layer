@@ -56,13 +56,13 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ---
 
-### M/S — `/onboard` domain / business-flow section
+### M/S — `/onboard-memory` domain / business-flow section
 
 **What:** Optional `architecture.md` block that maps code → real business processes (e.g. `checkout: cart → payment → order → fulfillment`), beyond the technical request→service→persistence flow.
 
 **Why:** Technical layers don't capture *what the product does*. A domain view helps a new agent reason about feature work, not just structure. Analog of Understand-Anything's `domain-analyzer`.
 
-**How:** Add a directive to `commands/onboard.md` Step 2 ("for app projects, trace 1–3 primary business flows from entry point through services") + a `## Business flows` template section. Skip for libraries/tools. Pure LLM reasoning, no new tooling.
+**How:** Add a directive to `commands/onboard-memory.md` Step 2 ("for app projects, trace 1–3 primary business flows from entry point through services") + a `## Business flows` template section. Skip for libraries/tools. Pure LLM reasoning, no new tooling.
 
 **Deferred from:** v6.12.0 scoping (kept lean — A+B shipped, C deferred).
 

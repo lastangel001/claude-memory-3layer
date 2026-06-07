@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.14.0 — 2026-06-07 — rename /onboard → /onboard-memory
+
+The onboarding slash command is renamed to avoid collision with other tools' generic `/onboard` and to read clearly in the command list.
+
+**Changed**
+- **`/onboard` → `/onboard-memory`** — command file renamed `commands/onboard.md` → `commands/onboard-memory.md`; invocation self-references and headings updated. `install.sh` installs the new filename. Backend `bin/onboard-report.sh` and the `.onboard-rev` marker are unchanged (internal names). README + IDEAS updated to the new invocation.
+- **Note for existing installs:** re-run `./install.sh`, then delete the stale `~/.claude/commands/onboard.md` (installer adds the new command but does not remove the old name).
+
 ## v6.13.0 — 2026-05-29 — /onboard: evolutionary update (incremental re-onboard, no data loss)
 
 `/onboard` is now **idempotent-friendly**: re-running it on a project that was already onboarded patches the existing memory instead of overwriting it. Hand-edits survive. (Implements deferred idea D.)

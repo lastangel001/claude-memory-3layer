@@ -1,4 +1,4 @@
-# /onboard — Bootstrap Claude Code memory for an existing project
+# /onboard-memory — Bootstrap Claude Code memory for an existing project
 
 Creates `CLAUDE.md` + full `.claude-docs/` scaffold by scanning the repo.
 Run from the project root.
@@ -169,11 +169,11 @@ In UPDATE mode, frame the report as a **changelog**: what changed since the last
 
 ## Step 5 — Persist the onboard revision
 
-Write the marker so the **next** `/onboard` can compute its delta. Run from the repo root:
+Write the marker so the **next** `/onboard-memory` can compute its delta. Run from the repo root:
 
 ```bash
 mkdir -p .claude-docs
-{ printf '# .claude-docs/.onboard-rev — last /onboard sync point. Auto-managed; commit with docs.\n'
+{ printf '# .claude-docs/.onboard-rev — last /onboard-memory sync point. Auto-managed; commit with docs.\n'
   printf 'rev: %s\n'  "$(git rev-parse HEAD 2>/dev/null || echo none)"
   printf 'date: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 } > .claude-docs/.onboard-rev

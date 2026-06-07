@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # onboard-report.sh — collect repo data for Claude Code memory bootstrap.
 #
-# Run from repo root before /onboard:
+# Run from repo root before /onboard-memory:
 #   bash ~/.claude/bin/onboard-report.sh
 #
 # Output: structured markdown to stdout. Claude reads it, then creates
-# CLAUDE.md + .claude-docs/ scaffold via the /onboard slash command.
+# CLAUDE.md + .claude-docs/ scaffold via the /onboard-memory slash command.
 
 set -euo pipefail
 
@@ -18,8 +18,8 @@ printf '# Onboard report — %s\n' "$(basename "$REPO_ROOT")"
 printf '_Generated: %s_\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 # ─── 0. Onboard mode: first-run vs update (delta since last onboard) ──────────
-# Reads .claude-docs/.onboard-rev (written by /onboard at the end of a run).
-# UPDATE mode → emit the delta since that revision so /onboard patches instead
+# Reads .claude-docs/.onboard-rev (written by /onboard-memory at the end of a run).
+# UPDATE mode → emit the delta since that revision so /onboard-memory patches instead
 # of rewriting, preserving hand-edited docs (evolutionary update, no data loss).
 _marker=".claude-docs/.onboard-rev"
 _in_git=0; git rev-parse --git-dir >/dev/null 2>&1 && _in_git=1 || true
