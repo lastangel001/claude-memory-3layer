@@ -56,14 +56,14 @@ run_hook_with() {
   ! grep -q "\[auto\]" "$SESSION_FILE"
 }
 
-@test "no SESSION.md → exits cleanly without creating one" {
+@test "no SESSION.md - exits cleanly without creating one" {
   rm "$SESSION_FILE"
   run_hook_with '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"x\""}}'
   [ "$status" -eq 0 ]
   [ ! -f "$SESSION_FILE" ]
 }
 
-@test "empty stdin → exits cleanly" {
+@test "empty stdin - exits cleanly" {
   run bash -c "printf '' | bash '$REPO_ROOT/hooks/post-tool-use.sh'"
   [ "$status" -eq 0 ]
 }

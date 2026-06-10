@@ -28,7 +28,9 @@ jobs:
           exit $rc
 
       - name: Install bats-core
-        run: npm install -g bats
+        # git clone instead of npm -g: avoids EACCES on ubuntu and works
+        # identically under Git Bash on windows ($HOME is a unix-style path).
+        run: git clone --depth 1 https://github.com/bats-core/bats-core.git "$HOME/bats-core"
 
       - name: Run tests
-        run: bats tests/
+        run: '"$HOME/bats-core/bin/bats" tests/'
