@@ -23,3 +23,45 @@ cat "$CLAUDE_HOME/settings.json" | node -e "JSON.parse(require('fs').readFileSyn
 `readFileSync(0)` reads fd 0 (stdin). Cross-platform: works on Linux/macOS/Windows. Apply same fix to `bin/doctor.sh` (~line 79).
 
 **Lesson:** never pass an MSYS/Git-Bash path as a string argument to a Windows-native interpreter (node/python from winget). Pipe via stdin, or convert with `cygpath -w`.
+
+## grep -F silently breaks `^`/`$` anchors (codemap.sh def was dead)
+
+**Symptom:** `codemap.sh def <symbol>` returned nothing for any symbol; no error.
+
+**Cause:** v6.7.0 switched ctags lookup to `grep -F "^${arg}\t"` to neutralize regex chars in symbol names. But `-F` makes EVERYTHING literal, including `^` — grep searched for a literal caret character, which никогда не стоит в начале tags-строки. Looks right (anchored + fixed-string), silently matches nothing.
+
+**Fix (v6.15.0):** exact first-field compare via awk — both anchored and regex-safe:
+```bash
+awk -F'\t' -v s="$arg" '$1 == s' "$root/.codemap.tags"
+```
+
+**Lesson:** `-F` and anchors are mutually exclusive. Need "literal string at line start" → awk string compare, or `grep -E "^$(escaped)"` with metachars escaped. Never combine `-F` with `^`/`$`.
+
+## bash printf: format string starting with `-` is parsed as an option
+
+**Symptom:** `printf '- %s\n' "$f"` → `printf: - : invalid option`, exit 2; under `set -euo pipefail` kills the whole script (broke onboard-report.sh sections 4/6-10 on any repo with `.gitignore`).
+
+**Fix:** `printf -- '- %s\n' "$f"` (option terminator) or move the dash into data: `printf '%s\n' "- $f"`.
+
+**Lesson:** any dynamically-shaped or dash-leading printf format needs `--`. Grep check: `grep -rn "printf '\-" --include='*.sh'`.
+
+## Claude Code's memory indexer re-nests SESSION.md frontmatter under `metadata:`
+
+**Symptom:** doctor warns "SESSION.md missing cwd: field" even though you wrote `cwd:` into frontmatter; CWD mismatch detection silently dead.
+
+**Cause:** some Claude Code versions rewrite files under `~/.claude/projects/*/memory/` — frontmatter becomes:
+```yaml
+---
+name: ""
+metadata:
+  node_type: memory
+  last_updated: ...
+  cwd: C:/...
+  originSessionId: ...
+---
+```
+Fields get indented under `metadata:`, so anchored patterns (`grep '^cwd:'`, `sed 's/^cwd:...'`) stop matching. Staleness check survived only because its grep was unanchored.
+
+**Fix (v6.15.0):** all frontmatter field lookups in `session-start.sh` / `doctor.sh` allow leading whitespace: `^[[:space:]]*cwd:`.
+
+**Lesson:** never anchor frontmatter-field regexes to line start in files Claude Code itself may rewrite. Match `^[[:space:]]*field:`.

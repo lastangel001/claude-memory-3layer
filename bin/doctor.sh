@@ -133,9 +133,10 @@ else
   else
     warn "SESSION.md missing last_updated — staleness check won't fire"
   fi
-  # Check cwd field
-  if grep -q '^cwd:' "$session_file" 2>/dev/null; then
-    sc=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" | head -n1 | tr -d '\r')
+  # Check cwd field (leading whitespace allowed — Claude Code's memory
+  # indexer may re-nest frontmatter under `metadata:`, see gotchas.md)
+  if grep -qE '^[[:space:]]*cwd:' "$session_file" 2>/dev/null; then
+    sc=$(sed -n 's/^[[:space:]]*cwd:[[:space:]]*//p' "$session_file" | head -n1 | tr -d '\r')
     ok "SESSION.md has cwd: $sc"
   else
     warn "SESSION.md missing cwd: field — CWD mismatch detection won't fire"

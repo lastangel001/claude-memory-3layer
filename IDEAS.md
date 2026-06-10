@@ -37,6 +37,14 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Fix false "settings.json invalid JSON" on Windows (`install.sh` + `doctor.sh`: pipe file via `cat` to node/python stdin — Windows-native interpreters can't resolve MSYS `/c/...` path args; see gotchas.md)
 - [x] `/onboard` enrichment from Understand-Anything concepts: architecture-layer classification (API/Service/Data/UI/Utility) + dependency-ordered guided tour (reading order) + self-review validation step (`commands/onboard.md`); symbol outline via existing `codemap.sh outline` fed into `onboard-report.sh` (graceful degrade)
 - [x] `/onboard` evolutionary update (incremental re-onboard, no data loss): `.claude-docs/.onboard-rev` marker + delta-aware report (commits / changed files / stale-doc hints since last onboard) → UPDATE mode patches existing docs surgically instead of overwriting; preserves hand-edits
+- [x] Fix `onboard-report.sh` printf leading-dash crash (`printf -- '- %s\n'` at lines 145+179; under `set -e` aborted sections 4/6–10 on any repo with `.gitignore`; gotcha documented)
+- [x] Fix `codemap.sh def`/`callees` dead lookup — `grep -F "^sym\t"` made `^` literal (matched nothing); replaced with awk exact first-field compare; `callers` rg pattern now escapes regex metachars; `.sh` added to staleness check
+- [x] Multiline `<private>` stripping — perl `-0pe 's/<private>.*?<\/private>//gs'` (old single-line sed missed blocks spanning lines = privacy leak); sed fallback + trace warning when perl absent
+- [x] install.sh completeness: `bin/memstat.sh` (was missing → `/memstat` broken on fresh install), `commands/migrate-legacy-memory.md`, `bin/lib/paths.sh`, `templates/` → `~/.claude/templates/` (CLAUDE.md refs fixed from phantom `~/.claude/dist/...`)
+- [x] post-tool-use.sh precedence fix — `A && B || C` matched any tool writing `CLAUDE.md`; parenthesized
+- [x] Stale qmd lock cleanup — crash between mkdir/rmdir would silently disable qmd refresh forever; locks >10 min now removed at SessionStart
+- [x] DRY `_add_path` → `bin/lib/paths.sh` (was duplicated in session-start.sh + memstat.sh)
+- [x] bats-core test suite (`tests/`: 29 cases — session-start staleness/CWD/privacy-multiline/compression/JSON-validity, post-tool-use capture patterns, onboard-report printf regression, install.sh completeness sanity) + GitHub Actions CI (ubuntu + windows Git Bash, `bash -n` + `bats tests/`)
 
 ---
 
@@ -78,17 +86,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ---
 
-### M/S — `.private` glob exclusion in session-start hook
-
-**What:** Allow a `.claude-private` file at repo root listing path globs to exclude from any memory capture (similar to cavemem's `excludePatterns`).
-
-**Why:** Whole directories (e.g. `secrets/`, `.env.local`, `certs/`) should never appear in SESSION.md or gotchas. A declarative exclude list is safer than relying on `<private>` tags.
-
-**How:** In `session-start.sh`, read `.claude-private` if present, expose the list in `additionalContext` so the model skips those paths when building File map / Decisions.
-
----
-
-
 ### M/M — Periodic SESSION.md cleanup cron
 
 **What:** A script (or cron entry added by `install.sh`) that finds SESSION.md files with `last_updated` older than N days (default: 30) and wipes them to the empty template.
@@ -106,16 +103,6 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 **Why:** `qmd` requires separate install + GGUF model download (hundreds of MB). Many users skip vector search entirely because setup friction is too high. A bundled ONNX embedder would make hybrid search zero-dependency.
 
 **Tradeoff:** Larger package size. ONNX Runtime has native bindings — adds install complexity on some platforms. Validate on Windows first (biggest pain point currently).
-
----
-
-### L/S — Obsidian `dataview` frontmatter for SESSION files
-
-**What:** Add `status: active|done|abandoned` to SESSION.md frontmatter. The distillation step (task wrap-up) sets `status: done`.
-
-**Why:** Obsidian users with a `~/.claude/` vault get free filtering: `dataview TABLE last_updated WHERE status = "active"` shows live sessions at a glance.
-
-**How:** Update SESSION.md template + distillation instruction in CLAUDE.md.
 
 ---
 
@@ -141,33 +128,27 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ## Hook reliability
 
+### M/S — Shared `bin/lib/validate-json.sh`
 
-### M/S — Validate JSON output of session-start.sh
+**What:** Extract the python3 → node → jq JSON-validation chain (currently copy-pasted in `install.sh`, `doctor.sh`, `merge-settings.sh`, `session-start.sh` — 4 copies) into a sourced library, like `slug.sh`/`paths.sh`.
 
-**What:** Before printing hookSpecificOutput JSON, pipe it through a quick validity check.
-
-**Why:** Any unescaped character in `json_escape()` (rare but possible with exotic Unicode or malformed session content) produces silent broken JSON. Claude Code silently skips the hook → model gets no memory context, user sees no error.
-
-**How:** Add after `escaped=` assignment:
-```bash
-printf '%s' "$escaped" | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))" 2>/dev/null \
-  || { echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"MEMORY HOOK ERROR: JSON escaped output failed validation. Check hook-trace.log."}}'; exit 0; }
-```
-Falls back to minimal safe output on failure; never blocks session start.
+**Why:** Any fix to the validation logic (e.g. the Windows MSYS-path gotcha) must be applied 4 times today; drift is inevitable.
 
 ---
 
-### M/S — Race condition on `.qmd-last-refresh` marker
+### L/S — BSD `stat` fallback in memstat.sh
 
-**What:** Make the qmd debounce marker write atomic to prevent two parallel SessionStart hooks from both triggering `qmd update`.
+**What:** `memstat.sh` uses GNU `stat -c %Y`; BSD/macOS needs `stat -f %m`. Add a runtime probe or dual-form fallback.
 
-**Why:** Two Claude Code windows open simultaneously each fire SessionStart within milliseconds. Both read marker → both see stale → both spawn background `qmd update` processes. Benign but wastes CPU and can cause index corruption on slow filesystems.
+**Why:** Windows-first project, but macOS users exist; staleness display silently shows 0 there.
 
-**How:** Replace `cat marker` + `date > marker` with an atomic check-and-set:
-```bash
-( flock -n 9 && cat "$qmd_marker" ... && date +%s > "$qmd_marker" ) 9>"$qmd_marker.lock"
-```
-Or simpler: use `mkdir` as atomic lock (`mkdir "$qmd_marker.lock" 2>/dev/null && ...`).
+---
+
+### L/M — merge-settings.sh fallback dedup
+
+**What:** The non-jq fallback path appends source hooks to an event that already exists in target without deduplicating commands (admitted in the script header comment). Implement command-level dedup in all three parser paths.
+
+**Why:** Re-running install with a partially-merged settings.json can register a hook twice → double execution per event.
 
 ---
 
@@ -180,16 +161,6 @@ Or simpler: use `mkdir` as atomic lock (`mkdir "$qmd_marker.lock" 2>/dev/null &&
 **Why:** INSTALL.md covers upgrade/rollback but has zero guidance on "I want to remove this entirely." Users who switch systems or tools are left guessing which files to delete.
 
 **How:** `bin/uninstall.sh` mirrors `install.sh`: removes known files, strips the `hooks` block from settings.json using `jq` or a sed/Python fallback. Adds "Uninstall" section to INSTALL.md. Default Claude memory is restored automatically once hooks block is removed.
-
----
-
-### M/M — Programmatic settings.json merge
-
-**What:** Replace "merge by hand" fallback with an automated merge script.
-
-**Why:** Current install.sh detects conflict and tells user to merge manually. In practice users copy-paste wrong, break JSON, and get cryptic Claude Code errors with no hint that hooks are the cause.
-
-**How:** Add `bin/merge-settings.sh` that uses `jq` if available, else falls back to a 10-line Node.js/Python merge. Merge strategy: deep-merge `hooks` arrays (append if no duplicate command), keep user's other keys untouched. Validate output JSON before writing.
 
 ---
 
@@ -222,25 +193,13 @@ Strong imperative wording rather than hedged advisory.
 
 ## Testing & CI
 
-### H/M — bats-core test suite for hooks (developer-side)
+### M/S — extend bats coverage to codemap.sh and doctor.sh
 
-**What:** Add `tests/` directory with [bats-core](https://github.com/bats-core/bats-core) tests covering the two hook scripts.
+**What:** `tests/` covers hooks, onboard-report and install completeness (since v6.15.0). Add cases for `codemap.sh` (def/callers/outline against a fixture repo — would have caught the dead `grep -F "^sym"` lookup) and a `doctor.sh` smoke run.
 
-**Why:** Hooks are the critical path — silent breakage = memory loss. No tests exist. Any edit to session-start.sh can break staleness detection, CWD check, privacy redaction, or compression flag without anyone noticing until a user reports lost context.
-
-**Important:** Tests run **from the repo** against the repo's hook files (not `~/.claude/hooks/`). Post-install validation is handled separately by `bin/doctor.sh`. CI (GitHub Actions) runs `bats tests/` on push.
-
-**Minimum scope for session-start.sh:**
-- Staleness check fires when `last_updated` >24h
-- CWD mismatch detected when `cwd:` doesn't match `$PWD`
-- Privacy redaction strips `<private>` blocks
-- Compression flag respected (env var + file)
-- JSON output is valid (`node -e "JSON.parse(...)"`)
-
-**Priority bumped 2026-05-25:** every new H/S item below (set -e discipline, JSON parsing robustness, quoting fixes) is exactly the class of bug a test suite catches. Tests are now the highest-leverage missing infrastructure piece.
+**Why:** codemap def was silently broken for several releases; only a behavioral test catches "command runs fine, returns nothing".
 
 ---
-
 
 ## Notes
 

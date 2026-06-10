@@ -69,7 +69,7 @@ ensure_tags() {
   fi
   # Stale if any source file newer than tags
   local newer
-  newer=$(find "$root" -type f \( -name "*.py" -o -name "*.php" -o -name "*.js" -o -name "*.ts" -o -name "*.tsx" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.cs" -o -name "*.rb" \) \
+  newer=$(find "$root" -type f \( -name "*.py" -o -name "*.php" -o -name "*.js" -o -name "*.ts" -o -name "*.tsx" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.cs" -o -name "*.rb" -o -name "*.sh" \) \
     -newer "$tags_file" -not -path "*/node_modules/*" -not -path "*/.git/*" -print -quit 2>/dev/null)
   if [ -n "$newer" ]; then
     build_tags "$root" >/dev/null
@@ -83,7 +83,9 @@ case "$cmd" in
   def)
     [ -z "$arg" ] && { echo "Usage: codemap.sh def <symbol>"; exit 1; }
     root=$(resolve_root); ensure_tags "$root"
-    grep -F "^${arg}	" "$root/.codemap.tags" 2>/dev/null \
+    # Exact first-field match via awk string compare: anchors correctly
+    # (grep -F treats ^ as literal) and immune to regex chars in symbol names.
+    awk -F'\t' -v s="$arg" '$1 == s' "$root/.codemap.tags" 2>/dev/null \
       | awk -F'\t' '{
           file=$2; rest=$3;
           for(i=4;i<=NF;i++) rest=rest "\t" $i;
@@ -94,17 +96,19 @@ case "$cmd" in
   callers)
     [ -z "$arg" ] && { echo "Usage: codemap.sh callers <symbol>"; exit 1; }
     root=$(resolve_root); ensure_tags "$root"
+    # Escape regex metachars in the symbol name (can't use -F: \b anchors needed).
+    arg_esc=$(printf '%s' "$arg" | sed 's/[][\.|$(){}?+*^]/\\&/g')
     # References: any line mentioning the symbol followed by `(` or `::`, excluding the definition line.
     "$rg_bin" -g '*.py' -g '*.php' -g '*.js' -g '*.ts' -g '*.tsx' -g '*.go' -g '*.rs' -g '*.java' -g '*.c' -g '*.cpp' -g '*.h' -g '*.cs' -g '*.rb' \
-       -n --no-heading -e "\\b${arg}\\b" "$root" 2>/dev/null \
-       | grep -vE "^[^:]+:[0-9]+:.*\b(class|function|def|interface|trait)\s+${arg}\b" \
+       -n --no-heading -e "\\b${arg_esc}\\b" "$root" 2>/dev/null \
+       | grep -vE "^[^:]+:[0-9]+:.*\b(class|function|def|interface|trait)\s+${arg_esc}\b" \
        | head -50
     ;;
   callees)
     [ -z "$arg" ] && { echo "Usage: codemap.sh callees <symbol>"; exit 1; }
     root=$(resolve_root); ensure_tags "$root"
     # Find def location, then grep callable patterns inside the body (heuristic: next 100 lines).
-    def_line=$(grep -F "^${arg}	" "$root/.codemap.tags" 2>/dev/null | head -1)
+    def_line=$(awk -F'\t' -v s="$arg" '$1 == s' "$root/.codemap.tags" 2>/dev/null | head -1)
     [ -z "$def_line" ] && { echo "(no definition found for ${arg})"; exit 0; }
     file=$(echo "$def_line" | awk -F'\t' '{print $2}')
     lineno=$(echo "$def_line" | grep -oE 'line:[0-9]+' | head -1 | cut -d: -f2)

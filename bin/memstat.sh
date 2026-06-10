@@ -10,22 +10,10 @@
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 # Augment PATH with common Node/npm locations (Windows + Unix).
-# Normalizes Windows paths (C:\... with backslashes) to unix form, since
-# $APPDATA/$USERPROFILE come back backslash-style in Git Bash and would
-# otherwise poison PATH (qmd resolves to a non-executable mangled path).
-_add_path() {
-  local p="$1"
-  p="${p//\\//}"  # backslashes -> forward slashes
-  [[ "$p" =~ ^([A-Za-z]):(.*)$ ]] && p="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"  # C:/x -> /c/x
-  [[ -d "$p" ]] && PATH="$p:$PATH"
-}
-_add_path "/c/Program Files/nodejs"
-_add_path "${APPDATA:-}/npm"
-_add_path "${USERPROFILE:-}/AppData/Roaming/npm"
-_add_path "$HOME/.npm-global/bin"
-_add_path "/usr/local/bin"
-_add_path "/opt/homebrew/bin"
-export PATH
+# Resolved relative to this script so it works both from the repo and installed.
+# shellcheck source=lib/paths.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/paths.sh"
+_augment_node_path
 export QMD_LLAMA_GPU="${QMD_LLAMA_GPU:-none}"
 
 WATCH=0; INTERVAL=3

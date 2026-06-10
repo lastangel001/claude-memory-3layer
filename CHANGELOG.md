@@ -1,5 +1,27 @@
 # Changelog
 
+## v6.15.0 — 2026-06-10 — bug-fix sweep + bats test suite + CI
+
+Full project audit: 6 confirmed bugs fixed (two of them silently broke shipped features), installer completeness restored, docs drift cleaned, and the long-planned test suite landed.
+
+**Fixed**
+- **`onboard-report.sh` printf leading-dash crash** (lines 145/179): `printf '- %s\n'` was parsed as an option → exit 2 under `set -euo pipefail` killed sections 4/6–10 on any repo with a `.gitignore` or Makefile. Now `printf -- '- %s\n'`. Gotcha documented; regression-tested.
+- **Multiline `<private>` blocks leaked past privacy redaction** (`session-start.sh`): single-line sed couldn't strip blocks spanning lines. Now perl `-0pe 's/<private>.*?<\/private>//gs'` (non-greedy, multiline); sed fallback + trace warning when perl is absent. Non-portable `grep -qP` probe removed.
+- **`codemap.sh def`/`callees` returned nothing for any symbol**: v6.7.0's `grep -F "^sym\t"` made `^` a literal character — matched nothing, silently. Replaced with awk exact first-field compare (anchored AND regex-safe). `callers` now escapes regex metachars in the symbol name; `.sh` files added to the tags staleness check.
+- **`install.sh` missing files**: `bin/memstat.sh` was never installed (→ `/memstat` broken on fresh installs) and `commands/migrate-legacy-memory.md` was never installed despite being documented. Both added.
+- **`post-tool-use.sh` operator precedence**: `A && B || C` made any tool writing a file named `CLAUDE.md` match the L1a capture; parenthesized so only `Write` matches.
+- **Stale qmd lock could disable index refresh forever**: a crash between mkdir-lock and rmdir left the lock in place and every later session silently skipped `qmd update`. Locks older than 10 minutes are now removed at SessionStart.
+- **CWD mismatch detection dead on indexer-rewritten SESSION.md**: Claude Code's memory indexer re-nests frontmatter under `metadata:` (fields get indented), so the anchored `^cwd:` lookups in `session-start.sh` and `doctor.sh` stopped matching. Frontmatter lookups now allow leading whitespace. Gotcha documented; regression-tested.
+
+**Added**
+- **bats-core test suite** (`tests/`, 29 cases): session-start (staleness, CWD mismatch, privacy redaction incl. multiline + non-greedy, compression flag, JSON validity), post-tool-use (capture patterns + precedence regression), onboard-report (printf regression, full render on fixture repo), install.sh completeness sanity (every repo command/script/hook must appear in `--dry-run` output — catches the `/memstat` bug class).
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): ubuntu + windows (Git Bash — primary platform), `bash -n` on all scripts + `bats tests/`.
+- **`bin/lib/paths.sh`** — shared `_add_path`/`_augment_node_path` (was duplicated in session-start.sh and memstat.sh).
+- **Templates installed to `~/.claude/templates/`** — CLAUDE.md referenced a phantom `~/.claude/dist/claude-memory-3layer/templates/` path that nothing created; install.sh now copies `templates/` and the protocol references the real location.
+
+**Changed**
+- README: `/memstat` documented in Tools; repo layout completed (`bin/memstat.sh`, `bin/lib/paths.sh`, `migrate.sh`, `commands/migrate-legacy-memory.md`). INSTALL.md "Files in this archive" completed. IDEAS.md: shipped items deduplicated out of the backlog; new deferred items recorded (shared validate-json lib, BSD stat fallback, merge-settings dedup, codemap test coverage).
+
 ## v6.14.0 — 2026-06-07 — rename /onboard → /onboard-memory
 
 The onboarding slash command is renamed to avoid collision with other tools' generic `/onboard` and to read clearly in the command list.

@@ -118,7 +118,7 @@ if [[ "$tool_name" == "Bash" && "$tool_cmd" == *"git commit"* ]]; then
 fi
 
 # Write to CLAUDE.md (L1a in-repo entry point updated)
-if [[ "$tool_name" == "Write" && "$tool_path" == *"/CLAUDE.md" || "$tool_path" == "CLAUDE.md" ]]; then
+if [[ "$tool_name" == "Write" && ( "$tool_path" == *"/CLAUDE.md" || "$tool_path" == "CLAUDE.md" ) ]]; then
   capture "L1a updated" "$tool_path"
   exit 0
 fi

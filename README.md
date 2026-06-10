@@ -147,6 +147,15 @@ Internally uses `bin/onboard-report.sh` to collect raw data (stack files, direct
 
 Default mode is **explicit-promotion** — cross-session memory only when the user says "remember"/"запомни". Toggle to auto-capture per-session if you want it.
 
+### `/memstat [--watch]` — task manager for the memory subsystem
+
+Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors embedded vs pending), refresh schedule, recent log activity, and a stall/health check. Use when `node.exe` is eating CPU and you want to know what it's doing. Backed by `bin/memstat.sh`.
+
+```
+/memstat
+/memstat --watch
+```
+
 ## Hooks (enforce discipline)
 
 - **SessionStart** — injects protocol reminder + active checks on every session open:
@@ -262,13 +271,19 @@ commands/codemap.md             — /codemap slash command (symbol map)
 commands/memory.md              — /memory slash command (mode controls)
 commands/memstat.md             — /memstat slash command (memory subsystem status)
 commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
+commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (legacy → L1-fallback synthesis)
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+bin/memstat.sh                  — memory subsystem status / task manager (backs /memstat)
 bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard-memory
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)
+bin/lib/paths.sh                — shared PATH augmentation for Node/npm tooling (sourced by session-start + memstat)
+migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
+tests/                          — bats-core test suite (hooks, onboard-report, install completeness)
+.github/workflows/ci.yml        — CI: bash -n + bats on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements
 ```
 

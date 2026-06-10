@@ -129,7 +129,7 @@ dataview TABLE last_updated WHERE status = "active"
 
 ### Bootstrapping in-repo L1
 When the user starts substantive work in a repo with no `<repo>/CLAUDE.md`:
-1. Propose creating it. Use templates from `~/.claude/dist/claude-memory-3layer/templates/repo/` if available, else write from the shapes shown below.
+1. Propose creating it. Use templates from `~/.claude/templates/repo/` if available, else write from the shapes shown below.
 2. Create `<repo>/.claude-docs/` with at minimum `index.md` (routing table) and `gotchas.md` (start empty — populate as you discover).
 3. Add `<repo>/.claude-docs/architecture.md` only when you have something real to write — don't fabricate.
 4. Commit as part of the user's work, not a separate commit unless asked.
@@ -180,7 +180,7 @@ tags: [memory/l2, session]
 
 ## In-repo L1 templates (shapes)
 
-Full templates live in `~/.claude/dist/claude-memory-3layer/templates/repo/` and in the friend-package zip.
+Full templates live in `~/.claude/templates/repo/` (installed by `install.sh`) and in the friend-package zip.
 
 **`<repo>/CLAUDE.md` (thin entry point):**
 ```markdown
@@ -219,7 +219,7 @@ Add more files when categories emerge: `patterns.md`, `cookbook.md`, `api.md`, `
 
 ## L1-fallback template (`~/.claude/projects/<slug>/memory/project.md`)
 
-Use this only when the project has no repo or you don't want this in-repo. Same shape as `<repo>/CLAUDE.md` + a "Known gotchas" section folded in. Full template: `~/.claude/dist/claude-memory-3layer/templates/project.md.fallback.template`.
+Use this only when the project has no repo or you don't want this in-repo. Same shape as `<repo>/CLAUDE.md` + a "Known gotchas" section folded in. Full template: `~/.claude/templates/project.md.fallback.template`.
 
 When the L1-fallback grows past one file (deep reverse-engineering projects, multi-component systems, multi-protocol work), apply the **Knowledge store organization** convention below — same as `<repo>/.claude-docs/`.
 

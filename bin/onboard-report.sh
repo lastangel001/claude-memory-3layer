@@ -142,7 +142,7 @@ for f in \
   Makefile Dockerfile docker-compose.yml docker-compose.yaml; do
   if [[ -f "$f" ]]; then
     _found_ep=1
-    printf '- %s\n' "$f"
+    printf -- '- %s\n' "$f"
   fi
 done
 [[ $_found_ep -eq 0 ]] && printf '(none of the common entry points found)\n'
@@ -176,7 +176,7 @@ for f in \
   .editorconfig .gitignore; do
   if [[ -f "$f" ]]; then
     _found_cfg=1
-    printf '- %s\n' "$f"
+    printf -- '- %s\n' "$f"
   fi
 done
 [[ $_found_cfg -eq 0 ]] && printf '(no common config files found)\n'

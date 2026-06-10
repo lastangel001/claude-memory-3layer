@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-latest = Git Bash, the primary target platform
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check all shell scripts
+        run: |
+          rc=0
+          for f in install.sh migrate.sh hooks/*.sh bin/*.sh bin/lib/*.sh; do
+            bash -n "$f" || { echo "SYNTAX FAIL: $f"; rc=1; }
+          done
+          exit $rc
+
+      - name: Install bats-core
+        run: npm install -g bats
+
+      - name: Run tests
+        run: bats tests/

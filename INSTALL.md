@@ -355,7 +355,14 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 - `templates/repo/CLAUDE.md` — L1a template (thin entry point for a project repo)
 - `templates/repo/.claude-docs/{index,gotchas,architecture,conventions}.md` — L1b templates
 - `templates/project.md.fallback.template` — L1-fallback template (account-local project memory)
-- `hooks/session-start.sh` — staleness check + protocol injection (portable, uses `$HOME`/`CLAUDE_HOME`)
-- `hooks/pre-compact.sh` — flush reminder
+  (all templates are also installed to `~/.claude/templates/`)
+- `hooks/session-start.sh` — staleness check + CWD mismatch + privacy redaction + protocol injection
+- `hooks/pre-compact.sh` — flush reminder (privacy, compression, CWD rules)
+- `hooks/post-tool-use.sh` — selective auto-capture (git commit, CLAUDE.md / .claude-docs writes)
+- `commands/{recall,codemap,memory,memstat,onboard-memory,migrate-legacy-memory}.md` — slash commands
+- `bin/{codemap,doctor,memstat,merge-settings,onboard-report,update}.sh` — support scripts
+- `bin/lib/{slug,paths}.sh` — shared libraries (slug formula, PATH augmentation)
+- `install.sh` / `migrate.sh` — installer and legacy-format migration helper
 - `settings.snippet.json` — hooks block to merge into `~/.claude/settings.json`
+- `README.md` / `CHANGELOG.md` / `IDEAS.md` / `LICENSE`
 - `INSTALL.md` — this file

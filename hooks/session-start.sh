@@ -38,6 +38,9 @@ qmd_refresh_needed=0
 # Atomic check-and-set via mkdir (POSIX atomic, no flock dependency).
 # Prevents two parallel SessionStart hooks from both triggering qmd update.
 # Marker written BEFORE spawning so second hook sees it immediately.
+# Stale-lock cleanup: a crash between mkdir and rmdir would otherwise
+# silently disable qmd refresh forever. Locks live milliseconds; >10 min = stale.
+find "$qmd_marker_lock" -maxdepth 0 -type d -mmin +10 -exec rmdir {} \; 2>/dev/null || true
 if mkdir "$qmd_marker_lock" 2>/dev/null; then
   _qmd_now=$(date +%s)
   _qmd_last=$(cat "$qmd_marker" 2>/dev/null || echo 0)
@@ -54,19 +57,9 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
     # Normalize Windows paths (backslashes / C: drive) to unix form, else
     # $APPDATA/$USERPROFILE poison PATH and qmd resolves to a mangled,
     # non-executable path on Git Bash.
-    _add_path() {
-      local p="$1"
-      p="${p//\\//}"
-      [[ "$p" =~ ^([A-Za-z]):(.*)$ ]] && p="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"
-      [[ -d "$p" ]] && PATH="$p:$PATH"
-    }
-    _add_path "/c/Program Files/nodejs"
-    _add_path "${APPDATA:-}/npm"
-    _add_path "${USERPROFILE:-}/AppData/Roaming/npm"
-    _add_path "$HOME/.npm-global/bin"
-    _add_path "/usr/local/bin"
-    _add_path "/opt/homebrew/bin"
-    export PATH
+    # shellcheck source=../bin/lib/paths.sh
+    source "${CLAUDE_HOME}/bin/lib/paths.sh"
+    _augment_node_path
     if command -v qmd >/dev/null 2>&1; then
       qmd update >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1
     fi
@@ -111,7 +104,9 @@ fi
 # treat SESSION.md as empty and start fresh.
 cwd_mismatch_warning=""
 if [[ -f "$session_file" ]]; then
-  session_cwd=$(sed -n 's/^cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
+  # Leading whitespace allowed: Claude Code's memory indexer may rewrite
+  # frontmatter, nesting fields under `metadata:` (see gotchas.md).
+  session_cwd=$(sed -n 's/^[[:space:]]*cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
   if [[ -n "$session_cwd" ]]; then
     if [[ "$session_cwd" != "$current_cwd_canonical" && "$session_cwd" != "$PWD" ]]; then
       cwd_mismatch_warning=$'\n\nCWD MISMATCH — DO NOT CONTINUE PREVIOUS SESSION: SESSION.md was written in ['"${session_cwd}"$']. Current project is ['"${current_cwd_canonical}"$']. The loaded state belongs to a DIFFERENT PROJECT. Ignore all content from SESSION.md. Create a fresh SESSION.md when substantive work begins in the current project.'
@@ -159,13 +154,23 @@ fi
 # accidentally persisted in the previous session before they reach model context.
 # Strips all occurrences; backup preserved at SESSION.md.bak only on first pass.
 if [[ -f "$session_file" ]]; then
-  if grep -qP '<private>|\r' "$session_file" 2>/dev/null || grep -q $'<private>\|\r' "$session_file" 2>/dev/null; then
+  if grep -q $'<private>\|\r' "$session_file" 2>/dev/null; then
     cp -n "$session_file" "${session_file}.bak" 2>/dev/null || true
-    # Strip CRLF + <private> blocks in a single portable pass (no sed -i dialect issues).
+    # Strip CRLF + <private> blocks (no sed -i dialect issues).
+    # perl handles multiline blocks (s-flag, non-greedy); sed fallback is
+    # single-line only — log a warning so the gap is visible in the trace.
     tmp="${session_file}.tmp.$$"
-    tr -d '\r' < "$session_file" \
-      | sed 's/<private>[^<]*<\/private>//g' \
-      > "$tmp" && mv "$tmp" "$session_file" || rm -f "$tmp"
+    if command -v perl >/dev/null 2>&1; then
+      tr -d '\r' < "$session_file" \
+        | perl -0pe 's/<private>.*?<\/private>//gs' \
+        > "$tmp" && mv "$tmp" "$session_file" || rm -f "$tmp"
+    else
+      echo "[$(date -Iseconds)] WARN: perl not found — <private> stripping is single-line only" \
+        >> "$CLAUDE_HOME/debug/hook-trace.log" || true
+      tr -d '\r' < "$session_file" \
+        | sed 's/<private>[^<]*<\/private>//g' \
+        > "$tmp" && mv "$tmp" "$session_file" || rm -f "$tmp"
+    fi
     echo "[$(date -Iseconds)] Privacy redaction + CRLF strip applied to SESSION.md" \
       >> "$CLAUDE_HOME/debug/hook-trace.log"
   fi
