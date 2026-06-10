@@ -128,6 +128,22 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ## Hook reliability
 
+### M/M — Indexer frontmatter format as first-class citizen
+
+**What:** Claude Code's memory indexer rewrites SESSION.md frontmatter, nesting fields under `metadata:` (see gotchas.md). v6.15.0 patched the `cwd:`/`last_updated:` readers to tolerate indentation, but the SESSION.md template in CLAUDE.md still teaches the flat format — every file effectively lives in two formats. Decide: either ship the template in indexer format, or add a test matrix "both formats" for every frontmatter reader (`migrate.sh` and `memstat.sh` read frontmatter too and were not audited for this).
+
+**Why:** Each new frontmatter consumer is a fresh chance to repeat the dead-`^cwd:` bug. One canonical answer kills the bug class.
+
+---
+
+### M/S — hook-trace.log rotation
+
+**What:** Every SessionStart/PostToolUse appends to `~/.claude/debug/hook-trace.log`; nothing ever truncates it. Add rotation at SessionStart (debounced daily): keep last N lines (e.g. 2000), `tail -n 2000 log > tmp && mv`.
+
+**Why:** Grows unbounded forever. Months of sessions = megabytes of noise that also slows any doctor/debug grep.
+
+---
+
 ### M/S — Shared `bin/lib/validate-json.sh`
 
 **What:** Extract the python3 → node → jq JSON-validation chain (currently copy-pasted in `install.sh`, `doctor.sh`, `merge-settings.sh`, `session-start.sh` — 4 copies) into a sourced library, like `slug.sh`/`paths.sh`.
@@ -153,6 +169,30 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 ---
 
 ## Install / Uninstall
+
+### M/S — Dynamic hook self-test in doctor.sh
+
+**What:** doctor.sh checks statics only (files exist, JSON valid, hooks registered). Add a live check: run the *installed* `session-start.sh` with a temp `CLAUDE_HOME` + temp cwd, assert exit 0 and valid output JSON. Same for `post-tool-use.sh` with a canned stdin event.
+
+**Why:** A broken runtime copy (bad merge, CRLF, partial install) currently surfaces only as silent memory loss in the next session. bats tests cover the repo copy, not the installed one.
+
+---
+
+### M/S — CRLF check for installed hooks in doctor.sh
+
+**What:** `install.sh` copies working-tree files verbatim; on Windows a CRLF-contaminated working copy installs CRLF hooks (git warned about exactly this during the v6.15.0 commit). Add to doctor: `grep -q $'\r' ~/.claude/hooks/*.sh` → fail with "re-checkout with LF / run dos2unix".
+
+**Why:** A `\r` in a hook either kills it outright on strict bash or produces mangled output — silently, since hooks swallow errors by design.
+
+---
+
+### M/S — Version-drift nudge at SessionStart
+
+**What:** `update.sh` exists but users forget it. SessionStart (debounced weekly, same marker pattern as qmd refresh): compare `~/.claude/.memory-version` against the source repo's CHANGELOG head (path from `.memory-source`); if behind, add one line to additionalContext: "memory protocol vX installed, vY available — run bash ~/.claude/bin/update.sh".
+
+**Why:** v6.15.0 shipped fixes for silently-broken features; an outdated install keeps the bugs without anyone noticing. Zero-cost nudge closes the loop.
+
+---
 
 ### M/S — Uninstall instructions and `bin/uninstall.sh`
 
@@ -192,6 +232,22 @@ Strong imperative wording rather than hedged advisory.
 ---
 
 ## Testing & CI
+
+### H/S — shellcheck in CI
+
+**What:** CI runs only `bash -n` (syntax). Add a shellcheck step (ubuntu job is enough) over `install.sh migrate.sh hooks/*.sh bin/**/*.sh` + one-time cleanup of existing warnings (or a pinned `.shellcheckrc` with justified excludes).
+
+**Why:** shellcheck statically catches the exact bug classes found in the v6.15.0 audit: the `&&`/`||` precedence bug (SC2107-family), unquoted variables, dead anchored greps would at least get flagged for review. Cheapest remaining safety net.
+
+---
+
+### M/S — pre-commit hook for this repo (dev-side)
+
+**What:** A repo-local git pre-commit hook (installed via `git config core.hooksPath .githooks` or documented one-liner): run `bats tests/` + warn if CHANGELOG.md is untouched while *.sh/commands/* changed (dev-workflow's mandatory triple).
+
+**Why:** dev-workflow.md discipline currently relies on memory. The v6.14 rename shipped without installing the renamed command anywhere — exactly what an automated triple-check would have caught.
+
+---
 
 ### M/S — extend bats coverage to codemap.sh and doctor.sh
 

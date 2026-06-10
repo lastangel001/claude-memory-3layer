@@ -20,7 +20,7 @@ Full project audit: 6 confirmed bugs fixed (two of them silently broke shipped f
 - **Templates installed to `~/.claude/templates/`** — CLAUDE.md referenced a phantom `~/.claude/dist/claude-memory-3layer/templates/` path that nothing created; install.sh now copies `templates/` and the protocol references the real location.
 
 **Changed**
-- README: `/memstat` documented in Tools; repo layout completed (`bin/memstat.sh`, `bin/lib/paths.sh`, `migrate.sh`, `commands/migrate-legacy-memory.md`). INSTALL.md "Files in this archive" completed. IDEAS.md: shipped items deduplicated out of the backlog; new deferred items recorded (shared validate-json lib, BSD stat fallback, merge-settings dedup, codemap test coverage).
+- README: `/memstat` documented in Tools; repo layout completed (`bin/memstat.sh`, `bin/lib/paths.sh`, `migrate.sh`, `commands/migrate-legacy-memory.md`). INSTALL.md "Files in this archive" completed. IDEAS.md: shipped items deduplicated out of the backlog; new deferred items recorded (shared validate-json lib, BSD stat fallback, merge-settings dedup, codemap test coverage); post-release +7 audit-inspired items (shellcheck CI, doctor dynamic self-test, CRLF check for installed hooks, hook-trace.log rotation, version-drift nudge, indexer-frontmatter decision, repo pre-commit hook).
 
 ## v6.14.0 — 2026-06-07 — rename /onboard → /onboard-memory
 
