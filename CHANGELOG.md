@@ -1,5 +1,19 @@
 # Changelog
 
+## v6.15.1 — 2026-06-11 — install/update logic audit fixes
+
+Re-verification of the install/update path with live scenarios in isolated environments surfaced one high-impact detection bug and several smaller issues.
+
+**Fixed**
+- **False "all hooks present" silently skipped hook registration** (`install.sh`): hook detection grepped for the event *name* (`"SessionStart"`), so a settings.json that already had *another tool's* hooks on the same events made the installer believe memory hooks were registered — they never were, and the whole protocol stayed dead with zero errors. Detection now greps for our actual hook commands (`hooks/session-start.sh` etc.); `merge-settings.sh` dedups by command, so foreign hooks and ours coexist. Regression-tested.
+- **`update.sh --dry-run` mutated the source repo**: it ran `git pull` unconditionally despite promising "write nothing". Dry-run now does `fetch` + pending-commit preview only; the pull happens only on a real run. Regression-tested (HEAD and `.memory-version` asserted unchanged).
+- **`merge-settings.sh` jq-only path wrote unvalidated output**: the validation chain only knew python3/node, but the jq merge path runs precisely when those are absent. jq added as a third validator.
+- **Unmatched template glob could abort install**: `templates/repo/.claude-docs/*.md` loop now skips non-existent matches (broken/partial archive) instead of crashing under `set -e`.
+
+**Changed**
+- Stale descriptions fixed: `install.sh` header and INSTALL.md claimed the installer "prints merge instructions" — it auto-merges since v6.7.0. INSTALL.md gained an "Updating an existing install" section (update.sh was documented only in README) and a custom-`CLAUDE_HOME` caveat (snippet hook paths always point to `~/.claude/`). "Next steps" numbering no longer starts at "2."; quoting nit in the executable check.
+- tests/: +4 cases (foreign-hooks merge regression, fresh-install hook commands, update.sh dry-run purity) — suite now 33.
+
 ## v6.15.0 — 2026-06-10 — bug-fix sweep + bats test suite + CI
 
 Full project audit: 6 confirmed bugs fixed (two of them silently broke shipped features), installer completeness restored, docs drift cleaned, and the long-planned test suite landed.

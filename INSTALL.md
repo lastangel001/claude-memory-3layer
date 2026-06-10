@@ -35,7 +35,7 @@ The killer move: **gotchas in L1b** + **verbatim Recent turns in L2**. Future se
 
 ## Install (or upgrade)
 
-**Easiest:** run the bundled `install.sh`. It detects first-install vs upgrade, backs up changed files with `.bak-<timestamp>`, NEVER overwrites your `IDENTITY.md` (L0 user data) or `projects/` tree (L1-fallback + L2 session memory), and prints settings.json merge instructions instead of blindly clobbering hook config.
+**Easiest:** run the bundled `install.sh`. It detects first-install vs upgrade, backs up changed files with `.bak-<timestamp>`, NEVER overwrites your `IDENTITY.md` (L0 user data) or `projects/` tree (L1-fallback + L2 session memory), and auto-merges missing hooks into an existing settings.json via `bin/merge-settings.sh` (backs up first, never clobbers your other keys).
 
 ```bash
 unzip claude-memory-3layer-v*.zip -d cm-pkg && cd cm-pkg
@@ -45,6 +45,19 @@ unzip claude-memory-3layer-v*.zip -d cm-pkg && cd cm-pkg
 ```
 
 The script writes everything under `$CLAUDE_HOME` (defaults to `~/.claude`). Manual install instructions below if you prefer step-by-step or are on a system without bash.
+
+> **Custom `CLAUDE_HOME` caveat:** the hook commands inside `settings.snippet.json` (and therefore a freshly created `settings.json`) point to `~/.claude/hooks/...` regardless of `CLAUDE_HOME`. Claude Code itself reads `~/.claude/settings.json`, so a non-default `CLAUDE_HOME` is only useful for testing — if you genuinely relocate, edit the hook paths in `settings.json` by hand.
+
+### Updating an existing install
+
+`install.sh` records the repo path in `~/.claude/.memory-source` and the version in `~/.claude/.memory-version`. To update later:
+
+```bash
+bash ~/.claude/bin/update.sh            # git pull in the source repo + re-run install.sh
+bash ~/.claude/bin/update.sh --dry-run  # fetch + preview pending commits; pulls nothing, writes nothing
+```
+
+Same preservation guarantees as install: `IDENTITY.md` and `projects/` are never touched; changed files are backed up with `.bak-<timestamp>`. `bash ~/.claude/bin/doctor.sh` shows the installed version (section 0).
 
 ### What the installer preserves vs replaces
 

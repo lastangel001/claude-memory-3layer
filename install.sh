@@ -5,8 +5,8 @@
 # - First install: lays out everything cleanly
 # - Upgrade: backs up changed files with .bak-<timestamp>, NEVER overwrites
 #   your IDENTITY.md (L0 user data) or projects/ tree (L1-fallback + L2)
-# - Detects existing settings.json and prints merge instructions instead of
-#   blindly overwriting hook config
+# - Detects existing settings.json and auto-merges missing hooks via
+#   bin/merge-settings.sh (backs up first, never clobbers other keys)
 #
 # Usage:
 #   ./install.sh            # installs to ~/.claude (or $CLAUDE_HOME if set)
@@ -90,6 +90,7 @@ fi
 backup_and_install "$SRC/templates/project.md.fallback.template" "$CLAUDE_HOME/templates/project.md.fallback.template"
 backup_and_install "$SRC/templates/repo/CLAUDE.md"               "$CLAUDE_HOME/templates/repo/CLAUDE.md"
 for _t in "$SRC/templates/repo/.claude-docs/"*.md; do
+  [[ -f "$_t" ]] || continue  # unmatched glob (broken/partial archive) — skip, don't crash
   backup_and_install "$_t" "$CLAUDE_HOME/templates/repo/.claude-docs/$(basename "$_t")"
 done
 
@@ -120,10 +121,12 @@ if [[ ! -f "$CLAUDE_HOME/settings.json" ]]; then
   do_or_dry "cp '$SRC/settings.snippet.json' '$CLAUDE_HOME/settings.json'"
   say "  + $CLAUDE_HOME/settings.json (fresh, with hooks)"
 else
+  # Detect by OUR hook command, not by event name — the user may have other
+  # tools' hooks registered on the same events (false "all hooks present").
   missing_hooks=()
-  grep -q '"SessionStart"' "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("SessionStart")
-  grep -q '"PreCompact"'   "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("PreCompact")
-  grep -q '"PostToolUse"'  "$CLAUDE_HOME/settings.json" 2>/dev/null  || missing_hooks+=("PostToolUse")
+  grep -q 'hooks/session-start.sh' "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("SessionStart")
+  grep -q 'hooks/pre-compact.sh'   "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("PreCompact")
+  grep -q 'hooks/post-tool-use.sh' "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("PostToolUse")
   if [[ ${#missing_hooks[@]} -eq 0 ]]; then
     say "  = $CLAUDE_HOME/settings.json (all hooks present)"
   else
@@ -215,7 +218,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
 
   # 3. Hook files executable
   for h in "$CLAUDE_HOME/hooks/"*.sh; do
-    [[ -f "$h" && ! -x "$h" ]] && say "  ✗ $(basename $h) not executable — run: chmod +x $h"
+    [[ -f "$h" && ! -x "$h" ]] && say "  ✗ $(basename "$h") not executable — run: chmod +x $h"
   done
 
   say "  Run 'bash ~/.claude/bin/doctor.sh' anytime for a full health check."
@@ -227,10 +230,10 @@ say ""
 say "Next steps:"
 if [[ ! -f "$CLAUDE_HOME/memory/IDENTITY.md" ]] || \
    grep -q "<your name" "$CLAUDE_HOME/memory/IDENTITY.md" 2>/dev/null; then
-  say "  1. Edit $CLAUDE_HOME/memory/IDENTITY.md (≤25 lines)"
+  say "  - Edit $CLAUDE_HOME/memory/IDENTITY.md (≤25 lines)"
 fi
-say "  2. Optional: install retrieval tools (qmd, ctags, ripgrep) — see INSTALL.md"
-say "  3. Start a new Claude Code session — hooks fire automatically"
+say "  - Optional: install retrieval tools (qmd, ctags, ripgrep) — see INSTALL.md"
+say "  - Start a new Claude Code session — hooks fire automatically"
 say ""
 say "To rollback to backed-up versions:"
 say "  for f in $CLAUDE_HOME/**/*.bak-$TS; do mv \"\$f\" \"\${f%.bak-$TS}\"; done"

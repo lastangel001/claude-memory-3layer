@@ -61,3 +61,51 @@ teardown() {
   [ "$status" -eq 0 ]
   [ ! -f "$TEST_HOME/CLAUDE.md" ]
 }
+
+@test "memory hooks merged even when other tools' hooks occupy same events (regression v6.15.1)" {
+  mkdir -p "$TEST_HOME"
+  cat > "$TEST_HOME/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/other-tool/hook.sh"}]}
+    ],
+    "PreCompact": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/other-tool/pc.sh"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/other-tool/ptu.sh"}]}
+    ]
+  }
+}
+EOF
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'hooks/session-start.sh' "$TEST_HOME/settings.json"
+  grep -q 'hooks/pre-compact.sh'   "$TEST_HOME/settings.json"
+  grep -q 'hooks/post-tool-use.sh' "$TEST_HOME/settings.json"
+  grep -q 'other-tool/hook.sh'     "$TEST_HOME/settings.json"
+}
+
+@test "fresh-install settings.json contains our hook commands" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'hooks/session-start.sh' "$TEST_HOME/settings.json"
+}
+
+@test "update.sh --dry-run pulls nothing and writes nothing" {
+  src_clone="$(mktemp -d)/repo"
+  git clone -q "$REPO_ROOT" "$src_clone"
+  env CLAUDE_HOME="$TEST_HOME" bash "$src_clone/install.sh" >/dev/null
+
+  head_before="$(git -C "$src_clone" rev-parse HEAD)"
+  ver_before="$(cat "$TEST_HOME/.memory-version")"
+  # Run the WORKING-TREE update.sh (the installed copy in TEST_HOME comes from
+  # the clone's committed HEAD and may lag behind uncommitted changes under test).
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/update.sh" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Skipping git pull"* ]]
+  [ "$(git -C "$src_clone" rev-parse HEAD)" = "$head_before" ]
+  [ "$(cat "$TEST_HOME/.memory-version")" = "$ver_before" ]
+  rm -rf "$(dirname "$src_clone")"
+}

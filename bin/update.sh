@@ -30,8 +30,20 @@ if [[ -f "$CLAUDE_HOME/.memory-version" ]]; then
 fi
 printf 'Source:    %s\n\n' "$SRC"
 
-printf 'Pulling...\n'
-git -C "$SRC" pull
-printf '\n'
+if [[ "${1:-}" == "--dry-run" ]]; then
+  # Dry-run must not mutate the source working copy: fetch + preview only.
+  printf '[dry-run] Skipping git pull. Pending upstream commits:\n'
+  if git -C "$SRC" fetch --quiet 2>/dev/null; then
+    pending=$(git -C "$SRC" log --oneline 'HEAD..@{u}' 2>/dev/null || true)
+    if [[ -n "$pending" ]]; then printf '%s\n' "$pending"; else printf '  (none — up to date)\n'; fi
+  else
+    printf '  (fetch failed — offline or no upstream; preview unavailable)\n'
+  fi
+  printf '\n'
+else
+  printf 'Pulling...\n'
+  git -C "$SRC" pull
+  printf '\n'
+fi
 
 exec bash "$SRC/install.sh" "$@"

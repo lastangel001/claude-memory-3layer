@@ -237,7 +237,7 @@ QMD_LLAMA_GPU=none qmd embed   # one-time, ~2GB of GGUF models download
 
 ```bash
 ~/.claude/bin/update.sh            # git pull + re-install in one step
-~/.claude/bin/update.sh --dry-run  # preview what would change
+~/.claude/bin/update.sh --dry-run  # fetch + preview pending commits; pulls nothing, writes nothing
 ```
 
 `install.sh` records the repo path at `~/.claude/.memory-source` on first install. `update.sh` reads it, does `git pull`, then re-runs `install.sh` (idempotent — backs up changed files, never touches `IDENTITY.md` or `projects/`). Run `bash ~/.claude/bin/doctor.sh` to see the installed version.

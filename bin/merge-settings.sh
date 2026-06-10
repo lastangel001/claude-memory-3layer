@@ -132,6 +132,10 @@ elif command -v node >/dev/null 2>&1; then
     process.stdin.on('end',()=>{try{JSON.parse(s)}catch(e){process.exit(1)}});
   " 2>/dev/null \
     || _valid=0
+elif command -v jq >/dev/null 2>&1; then
+  # jq-only systems take the jq merge path above — validate with jq too,
+  # otherwise that output would be written entirely unvalidated.
+  printf '%s' "$merged_json" | jq -e . >/dev/null 2>&1 || _valid=0
 fi
 
 if [[ $_valid -eq 0 ]]; then
