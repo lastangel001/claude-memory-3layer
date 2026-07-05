@@ -151,6 +151,10 @@ Internally uses `bin/onboard-report.sh` to collect raw data (stack files, direct
 
 Default mode is **explicit-promotion** — cross-session memory only when the user says "remember"/"запомни". Toggle to auto-capture per-session if you want it.
 
+### `/session-end` — distil & close a task
+
+Enforces the wrap-up ritual so high-signal work isn't lost at the next compact: promotes SESSION.md's durable facts to their permanent layer (gotchas / architecture / conventions / `CLAUDE.md` / IDENTITY / project.md — in-repo beats account-local), appends one `## Timeline` line to `project.md`, confirms what was promoted, then wipes SESSION.md to a clean template (keeping the `cwd:` anchor). Never commits — repo edits are proposed for you to review.
+
 ### `/memstat [--watch]` — task manager for the memory subsystem
 
 Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors embedded vs pending), refresh schedule, recent log activity, and a stall/health check. Use when `node.exe` is eating CPU and you want to know what it's doing. Backed by `bin/memstat.sh`.
@@ -167,6 +171,13 @@ Slash commands are unreachable from subagents, task runners and `claude -p` head
 ```bash
 claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 ```
+
+### Health & maintenance
+
+- **`bin/doctor.sh`** — checks the *install*: hook files + syntax, `settings.json` validity, duplicate/registered hooks, CRLF contamination, a dynamic self-test that runs the installed hooks in a throwaway home, optional tools, and the active JSON parser.
+- **`bin/vault-doctor.sh`** — checks the *content*: IDENTITY.md over its 25-line cap, oversize/stale SESSION.md files, transcript retention, and (inside a repo) `.claude-docs/` missing frontmatter, orphaned docs, broken links. `--fix` wipes stale sessions to a clean template. `--stale-days N` tunes the threshold.
+- **`bin/gen-index.sh`** — regenerates `.claude-docs/index.md` from each doc's `description:` frontmatter, preserving a hand-written MANUAL block. `--check` fails when the index is out of date (wire it into your project's CI).
+- **`bin/uninstall.sh`** — removes everything cleanly, strips only our hooks from `settings.json` (foreign hooks kept), and never touches `IDENTITY.md` or `projects/`. `--dry-run` to preview, `--yes` to skip the prompt. See INSTALL.md → Uninstall.
 
 ## Hooks (enforce discipline)
 
@@ -287,18 +298,26 @@ commands/memory.md              — /memory slash command (mode controls)
 commands/memstat.md             — /memstat slash command (memory subsystem status)
 commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
 commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (legacy → L1-fallback synthesis)
+commands/session-end.md         — /session-end slash command (distil + wipe task ritual)
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
-bin/doctor.sh                   — post-install health check (run anytime: bash ~/.claude/bin/doctor.sh)
+bin/doctor.sh                   — install health check (files, settings, dup hooks, CRLF, dynamic self-test)
+bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links); --fix
+bin/gen-index.sh                — regenerate .claude-docs/index.md from doc frontmatter; --check for CI
+bin/uninstall.sh                — clean removal (strips only our hooks; preserves IDENTITY.md + projects/)
 bin/memstat.sh                  — memory subsystem status / task manager (backs /memstat)
 bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard-memory
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
+bin/mcp-recall.mjs              — zero-dep MCP server: search_memory + get_identity for subagents/headless
+bin/transcript-export.sh        — export Claude Code .jsonl transcripts → searchable markdown (SessionStart)
 bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)
 bin/lib/paths.sh                — shared PATH augmentation for Node/npm tooling (sourced by session-start + memstat)
+bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (hooks, onboard-report, install completeness)
-.github/workflows/ci.yml        — CI: bash -n + bats on ubuntu + windows (Git Bash)
+tests/                          — bats-core test suite (78 cases: hooks, doctor, migrate, codemap, gen-index, vault-doctor)
+.githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
+.github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements
 ```
 

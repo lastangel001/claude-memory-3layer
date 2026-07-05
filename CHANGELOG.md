@@ -1,5 +1,29 @@
 # Changelog
 
+## v6.17.0 — 2026-07-05 — content-health tooling, uninstall, install hygiene
+
+All eighteen M-priority backlog items shipped in one sweep (the sole M/L item —
+a bundled ONNX embedder to replace `qmd` — stays deferred; it needs native
+bindings + cross-platform validation and doesn't belong in a batch). One real,
+still-live bug surfaced and was fixed along the way (see **Fixed**).
+
+**Added**
+- **`bin/vault-doctor.sh` — memory content health** (complements `doctor.sh`, which checks the *install*): mechanical, no-LLM checks over memory *content* — IDENTITY.md over the 25-line cap, oversize SESSION.md, stale sessions (`--stale-days`, default 30), transcript-export retention, and — when run inside a repo — `.claude-docs/` missing frontmatter, orphaned docs, and broken relative links. `--fix` wipes stale SESSION.md files to a blank template (preserving `cwd:`, backup kept). Absorbs the old "SESSION cleanup cron" idea as its stale-session check.
+- **`bin/gen-index.sh` — routing-table generator**: regenerates `.claude-docs/index.md` from each doc's `description:` frontmatter (falls back to first heading, then filename). Only the region between `AUTO-INDEX` markers is rewritten; a MANUAL block of hand-written notes is preserved. An existing markerless `index.md` is **never clobbered** — the script refuses and prints the two marker lines to add (or `--force` to scaffold). `--check` exits non-zero when a doc was added/removed without regenerating (wire it into a project's CI). Every shipped `.claude-docs/*.md` template gained a `description:` field.
+- **`bin/uninstall.sh` — clean removal**: strips *only our* hook commands from `settings.json` (foreign tools' hooks + other keys preserved), removes hooks/commands/bin/libs/templates/protocol/markers, and **never touches** `memory/IDENTITY.md` or `projects/` (your data). `--dry-run` + `--yes`. Backs up `settings.json` first. New **Uninstall** section in INSTALL.md.
+- **`/session-end` slash command**: enforces the task-wrap-up ritual — distil high-signal SESSION.md content to its permanent layer (gotchas/architecture/conventions/CLAUDE.md/IDENTITY/project.md, in-repo beats account-local), append one `## Timeline` line to project.md, confirm what was promoted, then wipe SESSION.md to a clean template. Never commits; repo-file promotions are proposed for the user to commit.
+- **`bin/lib/validate-json.sh` — shared JSON validator** (`python3 → node → jq`): the validation chain that was copy-pasted into `install.sh`, `doctor.sh`, `merge-settings.sh`, and `session-start.sh` is now one sourced library (`_validate_json_stream` / `_validate_json_file`). All four call sites refactored onto it.
+- **`doctor.sh` install-health checks**: duplicate hook registration (same command wired twice for one event = double token cost + execution), CRLF line endings in installed scripts, and a **dynamic self-test** that runs the *installed* `session-start.sh` + `post-tool-use.sh` in a throwaway home and asserts exit 0 + valid JSON — catches a broken runtime copy (bad merge, partial install) that static checks miss.
+- **`session-start.sh` nudges**: SESSION.md size warning (>4 KB — it re-loads in full on every compact), version-drift nudge (weekly-debounced; compares `.memory-version` against the source CHANGELOG head, `sort -V` forward-only so dev machines aren't nudged backwards), and a stronger "add `last_updated:` NOW" imperative when the marker is missing. `hook-trace.log` now self-rotates (daily-debounced, last 2000 lines) so it stops growing unbounded.
+- **`/onboard-memory` business-flow section**: app projects now get a `## Business flows` block tracing 1–3 primary domain processes end-to-end (e.g. `checkout: cart → payment → order → fulfillment`) — *what the product does*, beyond the technical layer view. Skipped for libraries / CLIs / tooling.
+- **Test suite grew 29 → 78 bats cases**: new `codemap.bats` (skips without ctags/rg), `doctor.bats` (dup-hook, CRLF, self-test, broken-runtime), `migrate.bats` (Pass A + Pass B), `gen-index.bats`, `vault-doctor.bats`, plus session-start coverage for the new nudges and a metadata-nested `last_updated` case (completes the flat + nested frontmatter matrix). Repo-local `.githooks/pre-commit` (opt-in via `git config core.hooksPath .githooks`) runs bats + nudges on a missing CHANGELOG entry.
+
+**Fixed**
+- **`migrate.sh` Pass B was *still* dead after v6.16.0**: the marker regex used `\<!--`, but in ERE (glibc) `\<` is a **word-boundary anchor**, not a literal `<` — so it never matched an `<!-- last_updated: … -->` marker and no file was ever migrated. v6.16.0 fixed the `local`-under-`set -e` abort but not this; the new `migrate.bats` caught it immediately. Both regexes now use a literal `<`.
+
+**Changed**
+- **Indexer-frontmatter bug class closed by audit, not just patches**: confirmed only `session-start.sh` + `doctor.sh` (+ the new `vault-doctor.sh`/`gen-index.sh` via a shared `_fm_get` idiom) read frontmatter *scalars*, and all use the whitespace-tolerant `^[[:space:]]*key:` form. `migrate.sh` (line-1 HTML only) and `memstat.sh` (reads no memory files) are provably unaffected. Documented as the canonical answer in `gotchas.md`, with the both-formats test matrix locking it in.
+
 ## v6.16.0 — 2026-07-05 — token-budget split, verbatim recall layer, MCP, fact lifecycle
 
 All five H-priority backlog items shipped (from the analysis session vs smixs/iva memory architecture).

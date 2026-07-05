@@ -44,9 +44,11 @@ migrate_html_marker() {
   first=$(head -n1 "$f" 2>/dev/null)
   # Only handle line-1 HTML-comment form: <!-- last_updated: ISO -->
   # Pattern stored in variable — avoids bash parser treating bare < as a
-  # comparison operator inside [[ =~ ]]. Permissive: optional leading whitespace,
-  # any trailing content after the ISO value (including -->) accepted.
-  local _html_re='^[[:space:]]*\<!--[[:space:]]*last_updated:[[:space:]]*([0-9T:.Z+-]+)'
+  # comparison operator inside [[ =~ ]]. NOTE: `<` must be LITERAL here, not
+  # `\<` — in ERE (glibc) `\<` is a word-boundary anchor and never matches the
+  # literal `<!--`, which silently killed Pass B. Permissive: optional leading
+  # whitespace, any trailing content after the ISO value (including -->).
+  local _html_re='^[[:space:]]*<!--[[:space:]]*last_updated:[[:space:]]*([0-9T:.Z+-]+)'
   if [[ ! "$first" =~ $_html_re ]]; then
     return 0
   fi
@@ -84,7 +86,8 @@ for f in "$CLAUDE_HOME/memory"/*.md "$CLAUDE_HOME/projects"/*/memory/*.md; do
   first=$(head -n1 "$f" 2>/dev/null)
   # NOT `local` — top-level loop; `local` outside a function errors and under
   # `set -e` killed Pass B on the first file (fixed v6.16.0).
-  _html_outer='^[[:space:]]*\<!--[[:space:]]*last_updated:'
+  # `<` LITERAL, not `\<` (word-boundary in ERE — never matched; fixed v6.17.0).
+  _html_outer='^[[:space:]]*<!--[[:space:]]*last_updated:'
   if [[ "$first" =~ $_html_outer ]]; then
     migrate_html_marker "$f"
     count_b=$((count_b + 1))

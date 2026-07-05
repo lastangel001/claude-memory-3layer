@@ -10,6 +10,21 @@ CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/logs" 2>/dev/null || true
 echo "[$(date -Iseconds)] SessionStart fired (cwd=$PWD)" >> "$CLAUDE_HOME/debug/hook-trace.log" || true
 
+# hook-trace.log rotation (debounced daily): the trace log is append-only and
+# grows unbounded — months of sessions = megabytes that slow every doctor/grep.
+# Keep the last 2000 lines, at most once per day (marker gated).
+_trace="$CLAUDE_HOME/debug/hook-trace.log"
+_rot_marker="$CLAUDE_HOME/debug/.hook-trace-rotated"
+if [[ -f "$_trace" ]]; then
+  _rot_today=$(date +%Y%m%d 2>/dev/null || echo "")
+  if [[ -n "$_rot_today" && "$(cat "$_rot_marker" 2>/dev/null || echo "")" != "$_rot_today" ]]; then
+    if [[ "$(wc -l < "$_trace" 2>/dev/null || echo 0)" -gt 2000 ]]; then
+      tail -n 2000 "$_trace" > "$_trace.tmp" 2>/dev/null && mv "$_trace.tmp" "$_trace" || rm -f "$_trace.tmp"
+    fi
+    printf '%s' "$_rot_today" > "$_rot_marker" 2>/dev/null || true
+  fi
+fi
+
 # ERR trap — on any unguarded failure, emit fallback JSON and exit cleanly.
 # Hook MUST NOT block session start; fallback JSON warns the user instead of silence.
 _hook_error() {
@@ -26,6 +41,10 @@ trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
 # shellcheck source=../bin/lib/slug.sh
 source "${CLAUDE_HOME}/bin/lib/slug.sh"
 _compute_slug
+
+# Shared JSON validator (python3 → node → jq). Used for the final hook output.
+# shellcheck source=../bin/lib/validate-json.sh
+source "${CLAUDE_HOME}/bin/lib/validate-json.sh"
 
 # --- qmd FTS index auto-refresh (debounced, background) ---
 # Runs ONLY the lightweight `qmd update` (BM25/FTS rebuild) in background if
@@ -101,7 +120,7 @@ if [[ -f "$session_file" ]]; then
       fi
     fi
   else
-    stale_warning=$'\n\nNOTE: SESSION.md exists but has no last_updated marker. Treat with suspicion — may be from before staleness tracking. Confirm goal with user before assuming it is current.'
+    stale_warning=$'\n\nNOTE: SESSION.md exists but has no last_updated marker.\n→ REQUIRED FIRST ACTION: add \'last_updated: <current UTC ISO>\' to its YAML frontmatter NOW, before any other response. Staleness detection cannot fire without it — do not skip this. Then confirm the goal with the user before assuming the state is current.'
   fi
 fi
 
@@ -159,6 +178,47 @@ else
   compress_note=$'\n\nSESSION COMPRESSION: enabled. Write SESSION.md prose in compressed caveman notation — drop articles/filler, fragments OK, code/paths exact. Saves context-window tokens on every reload.'
 fi
 
+# --- SESSION.md size warning ---
+# SESSION.md re-loads in full on every compact. Past ~4KB, that cost compounds
+# silently. Nudge the model to prune stale sections on its next update.
+size_warning=""
+if [[ -f "$session_file" ]]; then
+  _sz=$(wc -c < "$session_file" 2>/dev/null | tr -d ' ')
+  [[ -z "$_sz" ]] && _sz=0
+  if [[ "$_sz" -gt 4096 ]]; then
+    size_warning=$'\n\nSESSION.md SIZE: ~'"$((_sz / 1024))"$'KB (>4KB) — it re-loads in full on every compact. When you next update it, prune resolved # Decisions and stale # Recent turns to keep it lean.'
+  fi
+fi
+
+# --- Version-drift nudge (debounced weekly) ---
+# update.sh exists but users forget it; an outdated install silently keeps
+# already-fixed bugs. Compare installed .memory-version against the source
+# repo's CHANGELOG head; nudge only when the source is strictly newer.
+version_nudge=""
+_vc_marker="$CLAUDE_HOME/.version-check"
+_vc_now=$(date +%s 2>/dev/null || echo 0)
+_vc_last=$(cat "$_vc_marker" 2>/dev/null || echo 0)
+if [[ "$_vc_now" -gt 0 && $((_vc_now - _vc_last)) -ge 604800 ]]; then
+  printf '%s' "$_vc_now" > "$_vc_marker" 2>/dev/null || true
+  # Guard with -f: `< missing-file` emits a bash redirection error to stderr
+  # (harmless, but bats merges stderr into output and it breaks JSON asserts).
+  _installed_ver=""
+  [[ -f "$CLAUDE_HOME/.memory-version" ]] && _installed_ver=$(tr -d '\r\n' < "$CLAUDE_HOME/.memory-version" 2>/dev/null || echo "")
+  _src=""
+  [[ -f "$CLAUDE_HOME/.memory-source" ]] && _src=$(tr -d '\r\n' < "$CLAUDE_HOME/.memory-source" 2>/dev/null || echo "")
+  if [[ -n "$_installed_ver" && -n "$_src" && -f "$_src/CHANGELOG.md" ]]; then
+    _latest_ver=$(grep -m1 '^## v' "$_src/CHANGELOG.md" 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+    if [[ -n "$_latest_ver" && "$_latest_ver" != "$_installed_ver" ]]; then
+      # sort -V: only nudge when source version is strictly greater (dev machines
+      # can run ahead of the last install — don't nudge backwards).
+      _greater=$(printf '%s\n%s\n' "$_installed_ver" "$_latest_ver" | sort -V 2>/dev/null | tail -n1)
+      if [[ "$_greater" == "$_latest_ver" ]]; then
+        version_nudge=$'\n\nUPDATE AVAILABLE: memory protocol '"${_installed_ver}"$' installed, '"${_latest_ver}"$' in source. Run: bash ~/.claude/bin/update.sh'
+      fi
+    fi
+  fi
+fi
+
 # --- Privacy redaction: strip <private>…</private> from SESSION.md ---
 # Runs in-place on every SessionStart. Catches tagged secrets that Claude
 # accidentally persisted in the previous session before they reach model context.
@@ -211,23 +271,17 @@ During work: update SESSION.md continuously (decisions with rationale, file map,
 # when creating SESSION.md — eliminates the placeholder that gets forgotten.
 cwd_hint=$'\n\nCurrent project cwd (paste verbatim as \'cwd:\' value in SESSION.md YAML frontmatter): '"${current_cwd_canonical}"
 
-full="${base}${stale_warning}${cwd_mismatch_warning}${private_exclusions}${cwd_hint}${compress_note}"
+full="${base}${stale_warning}${cwd_mismatch_warning}${size_warning}${version_nudge}${private_exclusions}${cwd_hint}${compress_note}"
 escaped=$(json_escape "$full")
 
 # Validate JSON before emitting. Exotic Unicode or control chars that json_escape
 # doesn't cover would produce broken JSON and silently kill the hook's output.
 final_json=$(printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}' "$escaped")
+# rc 0 = valid, 1 = invalid, 2 = no parser (can't check → emit anyway).
+_json_rc=0
+printf '%s' "$final_json" | _validate_json_stream || _json_rc=$?
 _json_valid=1
-if command -v python3 >/dev/null 2>&1; then
-  printf '%s' "$final_json" | python3 -c "import sys,json; json.loads(sys.stdin.read())" 2>/dev/null \
-    || _json_valid=0
-elif command -v node >/dev/null 2>&1; then
-  printf '%s' "$final_json" | node -e "
-    let s=''; process.stdin.on('data',d=>s+=d);
-    process.stdin.on('end',()=>{try{JSON.parse(s)}catch(e){process.exit(1)}});
-  " 2>/dev/null \
-    || _json_valid=0
-fi
+[[ ${_json_rc:-0} -eq 1 ]] && _json_valid=0
 if [[ $_json_valid -eq 1 ]]; then
   printf '%s\n' "$final_json"
 else

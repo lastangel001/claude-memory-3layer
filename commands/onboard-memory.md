@@ -32,6 +32,7 @@ From the report, determine:
 - **Architecture pattern** (MVC, hexagonal, monolith, microservices…) — use README + docs/ if present; they often describe design decisions code doesn't reveal
 - **Architecture layers** — classify each top-level dir/module into a layer: **API / Service / Data / UI / Utility** (add project-specific ones like Worker, Domain if they fit). Note which layer each entry point sits in. Use the symbol outline section to see what each module actually contains.
 - **Reading order (guided tour)** — derive a dependency-ordered learning path: entry point → core modules it depends on → leaf utilities. 5–10 stops max, each with a one-line "why read this here". This is the path a new dev should follow.
+- **Business flows (app projects only)** — beyond the technical request→service→persistence flow, trace 1–3 *primary business processes* end-to-end from their entry point through the services that carry them (e.g. `checkout: cart → payment → order → fulfillment`). This is *what the product does*, which the layer view doesn't capture — it helps a new agent reason about feature work, not just structure. **Skip entirely for libraries, CLIs, and tooling** (no business domain to trace).
 - **Test runner + lint tooling**
 - **Hot files** — what changes most, and why?
 - **Real gotchas** — from FIXME/HACK grep + docs "known issues" / "caveats" sections: which are non-obvious to a new dev?
@@ -111,6 +112,14 @@ Add a **Reading order** section (the guided tour from Step 2) — dependency-ord
 1. `path` — <why first: entry point / orchestrator>
 2. `path` — <next: core dependency of #1>
 3. `path` — <leaf utility>
+```
+
+For **app projects**, add a **Business flows** section (from Step 2) — the domain processes, not the technical layers. Omit this section entirely for libraries / CLIs / tooling:
+
+```markdown
+## Business flows
+- **<flow name>**: <entry point> → <service> → <service> → <outcome>
+  <one line: what the product accomplishes here>
 ```
 
 ### `.claude-docs/conventions.md`

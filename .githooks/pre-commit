@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — dev-side guard for claude-memory-3layer.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+#
+# Does two things:
+#   1. Runs the bats suite (blocks the commit if a test fails).
+#   2. Nudges (non-blocking) if code changed but CHANGELOG.md is not staged —
+#      the dev-workflow "mandatory triple" is README + CHANGELOG + IDEAS.
+#
+# bats resolution: PATH first, then a $HOME/bats-core clone (the CI layout).
+# If neither is found, tests are skipped with a warning rather than blocking.
+
+set -u
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo" || exit 0
+
+staged=$(git diff --cached --name-only)
+
+# --- 1. Tests ---
+bats_bin=""
+if command -v bats >/dev/null 2>&1; then
+  bats_bin="bats"
+elif [[ -x "$HOME/bats-core/bin/bats" ]]; then
+  bats_bin="$HOME/bats-core/bin/bats"
+fi
+if [[ -n "$bats_bin" ]]; then
+  echo "pre-commit: running bats tests…"
+  if ! "$bats_bin" tests/; then
+    echo "pre-commit: ✗ tests failed — commit aborted (use 'git commit --no-verify' to override)." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: bats not found — skipping tests. Install to enforce: git clone https://github.com/bats-core/bats-core \$HOME/bats-core" >&2
+fi
+
+# --- 2. Mandatory-triple nudge (warn only) ---
+if printf '%s\n' "$staged" | grep -qE '\.(sh|mjs)$|^commands/|^hooks/|^install\.sh$|^migrate\.sh$'; then
+  if ! printf '%s\n' "$staged" | grep -qx 'CHANGELOG.md'; then
+    echo "pre-commit: ⚠ code changed but CHANGELOG.md is not staged." >&2
+    echo "            dev-workflow mandatory triple: README.md + CHANGELOG.md + IDEAS.md." >&2
+  fi
+fi
+
+exit 0

@@ -1,5 +1,6 @@
 ---
 tags: [memory/repo, gotchas]
+description: Footguns and non-obvious behaviour — read before debugging
 ---
 
 # Gotchas

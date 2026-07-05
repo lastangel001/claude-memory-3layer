@@ -1,5 +1,6 @@
 ---
 tags: [memory/repo, conventions]
+description: Code conventions — naming, style, commits
 ---
 
 # Conventions

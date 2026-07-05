@@ -1,5 +1,6 @@
 ---
 tags: [memory/repo, dev-workflow]
+description: Making a commit — README/CHANGELOG/IDEAS update rules, commit format, versioning
 ---
 
 # Development workflow — claude-memory-3layer
@@ -39,6 +40,19 @@ Two actions required:
 **Add newly discovered ideas.** If current work revealed a bug, edge case, or improvement opportunity not yet tracked — add it to the relevant backlog section with priority × effort rating (H/M/L × S/M/L) and a What/Why/How note.
 
 ---
+
+## Pre-commit hook (optional, recommended)
+
+A repo-local hook enforces the discipline above locally, before CI:
+
+```bash
+git config core.hooksPath .githooks   # one-time, per clone
+```
+
+`.githooks/pre-commit` then: (1) runs `bats tests/` and **blocks** the commit on
+failure (bats resolved from PATH or `$HOME/bats-core`; skipped with a warning if
+absent), and (2) **warns** (non-blocking) when `*.sh` / `commands/` / `hooks/`
+changed but `CHANGELOG.md` is not staged. Override once with `git commit --no-verify`.
 
 ## Commit message format
 

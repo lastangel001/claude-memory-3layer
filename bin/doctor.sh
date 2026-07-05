@@ -9,6 +9,10 @@
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 
+# Shared JSON validator (python3 → node → jq).
+# shellcheck source=lib/validate-json.sh
+source "${CLAUDE_HOME}/bin/lib/validate-json.sh"
+
 pass=0
 fail=0
 warn=0
@@ -73,21 +77,15 @@ sf="$CLAUDE_HOME/settings.json"
 if [[ ! -f "$sf" ]]; then
   fail "$sf — NOT FOUND (run install.sh)"
 else
-  # Validate JSON
-  json_ok=0
-  # Pipe via stdin — Windows-native node/python can't resolve MSYS '/c/...' paths
-  # passed as string args (false "invalid JSON"). bash resolves the path for cat.
-  if command -v node >/dev/null 2>&1; then
-    cat "$sf" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))" 2>/dev/null && json_ok=1
-  elif command -v python3 >/dev/null 2>&1; then
-    cat "$sf" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null && json_ok=1
-  fi
-  if [[ $json_ok -eq 1 ]]; then
+  # Validate JSON (shared lib feeds contents via stdin — Windows-native
+  # node/python can't resolve MSYS '/c/...' path args, false "invalid JSON").
+  _validate_json_file "$sf"; json_rc=$?
+  if [[ $json_rc -eq 0 ]]; then
     ok "$sf valid JSON"
-  elif [[ $json_ok -eq 0 ]]; then
+  elif [[ $json_rc -eq 1 ]]; then
     fail "$sf invalid JSON — Claude Code will ignore all hooks"
   else
-    warn "$sf JSON not validated (node/python3 not found)"
+    warn "$sf JSON not validated (python3/node/jq not found)"
   fi
 
   # Check each hook is registered
@@ -98,6 +96,110 @@ else
       fail "$hook NOT in settings.json (merge from settings.snippet.json)"
     fi
   done
+
+  # Duplicate hook registration — the same command wired more than once for
+  # one event (repeated installs/merges) doubles token cost + execution every
+  # session, invisibly. Needs a JSON parser to walk the structure.
+  dup_report=""
+  if command -v python3 >/dev/null 2>&1; then
+    dup_report=$(python3 - "$sf" <<'PYEOF' 2>/dev/null || true
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for event, groups in (d.get("hooks") or {}).items():
+    seen = {}
+    for grp in groups:
+        for h in grp.get("hooks", []):
+            c = h.get("command", "")
+            if c:
+                seen[c] = seen.get(c, 0) + 1
+    for c, n in seen.items():
+        if n > 1:
+            print(f"{event}: {c} (x{n})")
+PYEOF
+)
+  elif command -v node >/dev/null 2>&1; then
+    dup_report=$(node - "$sf" <<'JSEOF' 2>/dev/null || true
+const fs = require('fs');
+let d; try { d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')); } catch(e) { process.exit(0); }
+for (const [event, groups] of Object.entries(d.hooks || {})) {
+  const seen = {};
+  for (const grp of groups) for (const h of (grp.hooks || [])) {
+    const c = h.command || ''; if (c) seen[c] = (seen[c] || 0) + 1;
+  }
+  for (const [c, n] of Object.entries(seen)) if (n > 1) console.log(`${event}: ${c} (x${n})`);
+}
+JSEOF
+)
+  fi
+  if [[ -n "$dup_report" ]]; then
+    warn "Duplicate hook registrations (double token cost + execution per event):"
+    while IFS= read -r _d; do [[ -n "$_d" ]] && warn "  $_d"; done <<< "$dup_report"
+  else
+    ok "No duplicate hook registrations"
+  fi
+fi
+say ""
+
+# ─────────────────────────────────────────────
+# 2b. Installed hooks — CRLF + dynamic self-test
+# ─────────────────────────────────────────────
+say "Installed hooks runtime:"
+# CRLF check — install.sh copies working-tree files verbatim; a CRLF-contaminated
+# Windows checkout installs CRLF hooks. A stray \r either kills strict bash or
+# mangles output silently (hooks swallow errors by design).
+_crlf_found=0
+for h in "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh "$CLAUDE_HOME/bin/lib/"*.sh; do
+  [[ -f "$h" ]] || continue
+  if grep -q $'\r' "$h" 2>/dev/null; then
+    fail "$(basename "$h") has CRLF line endings — run: dos2unix '$h' (or re-checkout with LF)"
+    _crlf_found=1
+  fi
+done
+[[ $_crlf_found -eq 0 ]] && ok "No CRLF line endings in installed scripts"
+
+# Dynamic self-test — run the INSTALLED session-start.sh in a throwaway
+# CLAUDE_HOME/cwd and assert exit 0 + valid JSON output. bats covers the repo
+# copy; this catches a broken runtime copy (bad merge, partial install, CRLF).
+ss="$CLAUDE_HOME/hooks/session-start.sh"
+if [[ -x "$ss" ]]; then
+  _tmp_home=$(mktemp -d 2>/dev/null || echo "")
+  _tmp_cwd=$(mktemp -d 2>/dev/null || echo "")
+  if [[ -n "$_tmp_home" && -n "$_tmp_cwd" ]]; then
+    mkdir -p "$_tmp_home/bin/lib" "$_tmp_home/debug" "$_tmp_home/logs" "$_tmp_home/projects"
+    cp "$CLAUDE_HOME/bin/lib/"*.sh "$_tmp_home/bin/lib/" 2>/dev/null || true
+    _out=$( cd "$_tmp_cwd" && CLAUDE_HOME="$_tmp_home" bash "$ss" 2>/dev/null ); _rc=$?
+    if [[ $_rc -eq 0 ]] && printf '%s' "$_out" | _validate_json_stream; then
+      ok "session-start.sh runs clean (exit 0, valid JSON)"
+    else
+      fail "session-start.sh self-test FAILED (rc=$_rc or invalid JSON) — runtime copy broken, reinstall"
+    fi
+    rm -rf "$_tmp_home" "$_tmp_cwd"
+  else
+    warn "session-start.sh self-test skipped (mktemp unavailable)"
+  fi
+else
+  warn "session-start.sh not executable — self-test skipped"
+fi
+
+# post-tool-use.sh self-test — feed a canned event on stdin, assert exit 0.
+ptu="$CLAUDE_HOME/hooks/post-tool-use.sh"
+if [[ -x "$ptu" ]]; then
+  _tmp_home2=$(mktemp -d 2>/dev/null || echo "")
+  if [[ -n "$_tmp_home2" ]]; then
+    mkdir -p "$_tmp_home2/bin/lib" "$_tmp_home2/debug"
+    cp "$CLAUDE_HOME/bin/lib/"*.sh "$_tmp_home2/bin/lib/" 2>/dev/null || true
+    printf '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' \
+      | CLAUDE_HOME="$_tmp_home2" bash "$ptu" >/dev/null 2>&1; _rc2=$?
+    if [[ $_rc2 -eq 0 ]]; then
+      ok "post-tool-use.sh runs clean (exit 0 on canned event)"
+    else
+      fail "post-tool-use.sh self-test FAILED (rc=$_rc2) — runtime copy broken, reinstall"
+    fi
+    rm -rf "$_tmp_home2"
+  fi
 fi
 say ""
 

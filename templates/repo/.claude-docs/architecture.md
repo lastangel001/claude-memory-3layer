@@ -1,5 +1,6 @@
 ---
 tags: [memory/repo, architecture]
+description: Stack, layout, environment, deploy
 ---
 
 # Architecture

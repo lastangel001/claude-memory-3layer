@@ -24,6 +24,10 @@ CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 SRC_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
+# Shared JSON validator (python3 → node → jq).
+# shellcheck source=lib/validate-json.sh
+source "${SCRIPT_DIR}/lib/validate-json.sh"
+
 source_file="${SRC_ROOT}/settings.snippet.json"
 target_file="${CLAUDE_HOME}/settings.json"
 dry_run=0
@@ -122,21 +126,12 @@ merged_json=$(do_merge "$source_file" "$target_file") || exit 1
 
 # --- Validate merged JSON ---
 
+# rc 1 = invalid; rc 2 (no parser) can't happen here — do_merge already
+# required python3/node/jq — so treat only rc 1 as a validation failure.
 _valid=1
-if command -v python3 >/dev/null 2>&1; then
-  printf '%s' "$merged_json" | python3 -c "import sys,json; json.loads(sys.stdin.read())" 2>/dev/null \
-    || _valid=0
-elif command -v node >/dev/null 2>&1; then
-  printf '%s' "$merged_json" | node -e "
-    let s=''; process.stdin.on('data',d=>s+=d);
-    process.stdin.on('end',()=>{try{JSON.parse(s)}catch(e){process.exit(1)}});
-  " 2>/dev/null \
-    || _valid=0
-elif command -v jq >/dev/null 2>&1; then
-  # jq-only systems take the jq merge path above — validate with jq too,
-  # otherwise that output would be written entirely unvalidated.
-  printf '%s' "$merged_json" | jq -e . >/dev/null 2>&1 || _valid=0
-fi
+_vrc=0
+printf '%s' "$merged_json" | _validate_json_stream || _vrc=$?
+[[ ${_vrc:-0} -eq 1 ]] && _valid=0
 
 if [[ $_valid -eq 0 ]]; then
   printf 'Error: merged output is invalid JSON — target file unchanged\n' >&2

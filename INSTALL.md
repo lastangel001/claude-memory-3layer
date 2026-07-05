@@ -80,6 +80,28 @@ TS=20260519-181949   # whatever the installer printed
 for f in ~/.claude/**/*.bak-$TS; do mv "$f" "${f%.bak-$TS}"; done
 ```
 
+### Uninstall
+
+Remove the protocol and restore Claude Code's built-in memory behavior:
+
+```bash
+bash ~/.claude/bin/uninstall.sh            # interactive confirm
+bash ~/.claude/bin/uninstall.sh --dry-run  # preview — removes nothing
+bash ~/.claude/bin/uninstall.sh --yes      # no prompt
+```
+
+What it does:
+
+- **Strips only our hooks** from `~/.claude/settings.json` (the three `hooks/*.sh` commands). Foreign tools' hooks on the same events and every other key are preserved; a timestamped backup is written first. Removing the hooks block is what restores default memory behavior.
+- **Removes** the three hooks, our slash commands, `bin/` scripts + `bin/lib/`, `templates/protocol` + `templates/repo`, `~/.claude/CLAUDE.md` (the protocol), and the version markers.
+- **Never touches your data**: `~/.claude/memory/IDENTITY.md` (L0) and the entire `~/.claude/projects/` tree (L1-fallback, L2 sessions, transcripts) are left in place.
+
+If you also registered the MCP server, remove it separately:
+
+```bash
+claude mcp remove --scope user memory-recall
+```
+
 ### Format compatibility with older installs
 
 `SESSION.md` and `project.md` files written by earlier versions of this protocol use HTML comments (`<!-- last_updated: ISO -->`) for the staleness marker. The hook's regex accepts both the legacy HTML-comment form and the new YAML frontmatter. **No migration required** — old files keep working immediately.

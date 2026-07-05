@@ -1,5 +1,6 @@
 ---
 tags: [memory/repo, gotcha]
+description: Cross-platform footguns — install/doctor/path-handling; unexpected behavior
 ---
 
 # Gotchas — claude-memory-3layer
@@ -77,3 +78,13 @@ Fields get indented under `metadata:`, so anchored patterns (`grep '^cwd:'`, `se
 **Fix (v6.15.0):** all frontmatter field lookups in `session-start.sh` / `doctor.sh` allow leading whitespace: `^[[:space:]]*cwd:`.
 
 **Lesson:** never anchor frontmatter-field regexes to line start in files Claude Code itself may rewrite. Match `^[[:space:]]*field:`.
+
+**Canonical answer (v6.17.0 audit — kills the bug class):** exactly two scripts read frontmatter *scalars* from indexer-rewritable files, and both use the leading-whitespace form:
+- `session-start.sh` — `cwd:` (sed, whitespace-tolerant) + `last_updated:` (unanchored grep).
+- `doctor.sh` / `vault-doctor.sh` / `gen-index.sh` — via `sed -n 's/^[[:space:]]*KEY:...'` (a shared `_fm_get` idiom).
+
+The two other frontmatter-adjacent scripts are **not** affected and need no whitespace tolerance:
+- `migrate.sh` only matches a **line-1 HTML comment** (`<!-- last_updated: … -->`); a file already in YAML (flat or metadata-nested) starts with `---` and is correctly skipped.
+- `memstat.sh` reads **no** memory `.md` files at all (only `qmd status` + process list).
+
+Test matrix (`tests/session-start.bats`): both `cwd:` **and** `last_updated:` are covered in flat *and* metadata-nested form — any new frontmatter reader must add both-format cases or reuse `_fm_get`.

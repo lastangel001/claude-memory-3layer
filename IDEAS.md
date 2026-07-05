@@ -52,46 +52,26 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Fact lifecycle: `confidence: verified|inferred` + SUPERSEDE + dated `## History` in gotchas/decisions; protocol rule 7 + templates + onboard (v6.16.0)
 - [x] Distillation timeline line in project.md (`## Timeline`, one line per wrapped task) (v6.16.0)
 - [x] shellcheck in CI (ubuntu, `-S warning`, all scripts) + cleanup; found & fixed dead `migrate.sh` Pass B (`local` at top level under `set -e`) (v6.16.0)
+- [x] `bin/vault-doctor.sh` — memory content health (IDENTITY >25 lines, SESSION oversize/stale, transcript retention, `.claude-docs` missing frontmatter/orphans/broken links); `--fix` wipes stale sessions (absorbs the SESSION-cleanup-cron idea) (v6.17.0)
+- [x] `bin/gen-index.sh` — regenerate `.claude-docs/index.md` from `description:` frontmatter, AUTO-INDEX markers + preserved MANUAL block; `--check` CI guard; every doc gained a `description:` (v6.17.0)
+- [x] `bin/uninstall.sh` + INSTALL.md Uninstall section — strips only our hooks (foreign hooks/keys preserved), never touches IDENTITY.md/projects/ (v6.17.0)
+- [x] `bin/lib/validate-json.sh` — shared python3→node→jq validator; refactored all 4 copy-paste call sites (install/doctor/merge-settings/session-start) (v6.17.0)
+- [x] `doctor.sh`: duplicate hook registration check + CRLF check on installed scripts + dynamic self-test (runs installed session-start/post-tool-use in throwaway home) (v6.17.0)
+- [x] `session-start.sh`: SESSION.md size warning (>4KB) + version-drift nudge (weekly debounce, `sort -V` forward-only) + strong `last_updated`-required imperative + hook-trace.log rotation (daily, last 2000 lines) (v6.17.0)
+- [x] `/session-end` slash command — distil to permanent layers + `## Timeline` line + wipe SESSION.md (enforces the distillation-timeline convention) (v6.17.0)
+- [x] `/onboard-memory` business-flow section — app projects trace 1–3 domain processes end-to-end; skipped for libs/CLIs (v6.17.0)
+- [x] Indexer-frontmatter bug class closed by audit — only session-start/doctor read scalars (both tolerant); migrate (line-1 HTML) + memstat (no memory reads) provably unaffected; canonical answer in gotchas.md + flat/nested test matrix (v6.17.0)
+- [x] `.githooks/pre-commit` (opt-in) — runs bats + nudges on missing CHANGELOG; documented in dev-workflow.md (v6.17.0)
+- [x] bats coverage: `codemap.bats` (skips w/o ctags/rg), `doctor.bats`, `migrate.bats` (caught a real still-live Pass B regex bug), `gen-index.bats`, `vault-doctor.bats` — 29 → 76 cases (v6.17.0)
+- [x] **Fixed (found by new tests):** `migrate.sh` Pass B regex used `\<!--` — in ERE `\<` is a word-boundary anchor, never matched the literal `<!--`; Pass B was still dead after the v6.16.0 `local` fix. Now literal `<` (v6.17.0)
 
 ---
 
 ## Backlog
 
-### M/S — `/onboard-memory` domain / business-flow section
+### M/L — Lightweight vector search without qmd  *(deferred — not a batch item)*
 
-**What:** Optional `architecture.md` block that maps code → real business processes (e.g. `checkout: cart → payment → order → fulfillment`), beyond the technical request→service→persistence flow.
-
-**Why:** Technical layers don't capture *what the product does*. A domain view helps a new agent reason about feature work, not just structure. Analog of Understand-Anything's `domain-analyzer`.
-
-**How:** Add a directive to `commands/onboard-memory.md` Step 2 ("for app projects, trace 1–3 primary business flows from entry point through services") + a `## Business flows` template section. Skip for libraries/tools. Pure LLM reasoning, no new tooling.
-
-**Deferred from:** v6.12.0 scoping (kept lean — A+B shipped, C deferred).
-
----
-
-### M/S — SESSION.md size warning in SessionStart
-
-**What:** If SESSION.md exceeds a threshold (e.g. 4 KB), inject a warning into `additionalContext` advising the model to trim it.
-
-**Why:** SESSION.md bloats silently over long sessions. Every compaction re-reads the full file. A size warning gives the model a nudge to prune before cost compounds.
-
-**How:** `wc -c "$session_file"` in `session-start.sh`; if above threshold add one-liner to `base` message.
-
----
-
-### M/M — Periodic SESSION.md cleanup cron
-
-> **Absorbed by** "vault-doctor.sh" (Memory quality & token budget section) — implement as its stale-session check + `--fix` mode rather than a standalone cron.
-
-**What:** A script (or cron entry added by `install.sh`) that finds SESSION.md files with `last_updated` older than N days (default: 30) and wipes them to the empty template.
-
-**Why:** Abandoned sessions accumulate in `~/.claude/projects/*/memory/`. No cleanup mechanism exists today. Over months, stale sessions fill disk and pollute `/recall` search results.
-
-**How:** `bin/cleanup-sessions.sh --older-than 30d --dry-run` (dry run by default). Optional cron wiring in `install.sh`.
-
----
-
-### M/L — Lightweight vector search without qmd
+**Status:** the one M-priority item **not** shipped in the v6.17.0 M-sweep, deliberately. It needs ONNX Runtime **native bindings**, adds significant package size, and requires per-platform validation (Windows first) — a multi-day research effort, not a mechanical batch change. Give it its own scoped release; don't fold it into a sweep.
 
 **What:** Replace `qmd embed` dependency with a pure-Node local embedder using ONNX Runtime + a small model (e.g. all-MiniLM-L6-v2 at ~23 MB). Ship inside the package.
 
@@ -123,35 +103,7 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 ## Memory quality & token budget (iva analysis, 2026-07-05)
 
-Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (willow-tree memory: verbatim daily transcripts → rollup summaries → always-on CORE.md + typed cards). The H-priority items from this section (fact lifecycle, protocol slimming, transcript indexing) + distillation timeline shipped in v6.16.0 — see "Already shipped".
-
-### M/S — index.md auto-generation (iva `moc.generate` analog)
-
-**What:** Script regenerates the routing table in `.claude-docs/index.md` from each doc's frontmatter (`description`, `tags`). Hand-written routing notes survive in a marked manual block.
-
-**Why:** index.md is maintained by hand and drifts — new docs get forgotten, deleted docs leave dead rows. iva regenerates MOC.md nightly for the same reason.
-
-**How:** `bin/gen-index.sh` (bash + awk over frontmatter); callable from `/onboard-memory` UPDATE mode and vault-doctor.
-
----
-
-### M/S — vault-doctor.sh (memory content health, mechanical)
-
-**What:** `bin/vault-doctor.sh` — deterministic, no-LLM checks over memory content (vs `doctor.sh` which checks the install): broken relative md links in `.claude-docs/`, docs missing frontmatter, docs absent from index.md (orphans), IDENTITY.md > 25 lines, SESSION.md oversize, stale sessions (>30d). Absorbs the "Periodic SESSION.md cleanup cron" idea below as one of its checks (`--fix` mode wipes stale sessions).
-
-**Why:** Content rots silently today; install-doctor can't see it. iva runs exactly this split: LLM does rollup, mechanical doctor does hygiene.
-
----
-
-### M/S — Duplicate hook registration check in doctor.sh
-
-**What:** Detect the same command registered more than once for the same event across settings files; warn with file/event.
-
-**Why:** Observed live: a SessionStart context block injected twice → double token cost every session + double execution. Easy to cause via repeated installs/merges, invisible without tracing.
-
-**How:** jq/python pass over merged `settings.json` + `settings.local.json` in `doctor.sh`.
-
----
+Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (willow-tree memory: verbatim daily transcripts → rollup summaries → always-on CORE.md + typed cards). The H-priority items from this section (fact lifecycle, protocol slimming, transcript indexing) + distillation timeline shipped in v6.16.0; the mechanical-hygiene items (vault-doctor, index.md auto-generation, duplicate-hook check) shipped in v6.17.0 — see "Already shipped". What remains below is the L-priority tail.
 
 ### L/S — Trim `# Recent turns` verbatim quota
 
@@ -179,30 +131,6 @@ Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (
 
 ## Hook reliability
 
-### M/M — Indexer frontmatter format as first-class citizen
-
-**What:** Claude Code's memory indexer rewrites SESSION.md frontmatter, nesting fields under `metadata:` (see gotchas.md). v6.15.0 patched the `cwd:`/`last_updated:` readers to tolerate indentation, but the SESSION.md template in CLAUDE.md still teaches the flat format — every file effectively lives in two formats. Decide: either ship the template in indexer format, or add a test matrix "both formats" for every frontmatter reader (`migrate.sh` and `memstat.sh` read frontmatter too and were not audited for this).
-
-**Why:** Each new frontmatter consumer is a fresh chance to repeat the dead-`^cwd:` bug. One canonical answer kills the bug class.
-
----
-
-### M/S — hook-trace.log rotation
-
-**What:** Every SessionStart/PostToolUse appends to `~/.claude/debug/hook-trace.log`; nothing ever truncates it. Add rotation at SessionStart (debounced daily): keep last N lines (e.g. 2000), `tail -n 2000 log > tmp && mv`.
-
-**Why:** Grows unbounded forever. Months of sessions = megabytes of noise that also slows any doctor/debug grep.
-
----
-
-### M/S — Shared `bin/lib/validate-json.sh`
-
-**What:** Extract the python3 → node → jq JSON-validation chain (currently copy-pasted in `install.sh`, `doctor.sh`, `merge-settings.sh`, `session-start.sh` — 4 copies) into a sourced library, like `slug.sh`/`paths.sh`.
-
-**Why:** Any fix to the validation logic (e.g. the Windows MSYS-path gotcha) must be applied 4 times today; drift is inevitable.
-
----
-
 ### L/S — BSD `stat` fallback in memstat.sh
 
 **What:** `memstat.sh` uses GNU `stat -c %Y`; BSD/macOS needs `stat -f %m`. Add a runtime probe or dual-form fallback.
@@ -219,106 +147,15 @@ Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (
 
 ---
 
-## Install / Uninstall
-
-### M/S — Dynamic hook self-test in doctor.sh
-
-**What:** doctor.sh checks statics only (files exist, JSON valid, hooks registered). Add a live check: run the *installed* `session-start.sh` with a temp `CLAUDE_HOME` + temp cwd, assert exit 0 and valid output JSON. Same for `post-tool-use.sh` with a canned stdin event.
-
-**Why:** A broken runtime copy (bad merge, CRLF, partial install) currently surfaces only as silent memory loss in the next session. bats tests cover the repo copy, not the installed one.
-
----
-
-### M/S — CRLF check for installed hooks in doctor.sh
-
-**What:** `install.sh` copies working-tree files verbatim; on Windows a CRLF-contaminated working copy installs CRLF hooks (git warned about exactly this during the v6.15.0 commit). Add to doctor: `grep -q $'\r' ~/.claude/hooks/*.sh` → fail with "re-checkout with LF / run dos2unix".
-
-**Why:** A `\r` in a hook either kills it outright on strict bash or produces mangled output — silently, since hooks swallow errors by design.
-
----
-
-### M/S — Version-drift nudge at SessionStart
-
-**What:** `update.sh` exists but users forget it. SessionStart (debounced weekly, same marker pattern as qmd refresh): compare `~/.claude/.memory-version` against the source repo's CHANGELOG head (path from `.memory-source`); if behind, add one line to additionalContext: "memory protocol vX installed, vY available — run bash ~/.claude/bin/update.sh".
-
-**Why:** v6.15.0 shipped fixes for silently-broken features; an outdated install keeps the bugs without anyone noticing. Zero-cost nudge closes the loop.
-
----
-
-### M/S — Uninstall instructions and `bin/uninstall.sh`
-
-**What:** Document and script complete removal: hook files from `~/.claude/hooks/`, entries from `settings.json`, slash command files from `~/.claude/commands/`, bin scripts. Restore default Claude Code memory behavior.
-
-**Why:** INSTALL.md covers upgrade/rollback but has zero guidance on "I want to remove this entirely." Users who switch systems or tools are left guessing which files to delete.
-
-**How:** `bin/uninstall.sh` mirrors `install.sh`: removes known files, strips the `hooks` block from settings.json using `jq` or a sed/Python fallback. Adds "Uninstall" section to INSTALL.md. Default Claude memory is restored automatically once hooks block is removed.
-
----
-
-## SESSION.md lifecycle
-
-### M/M — `/session-end` slash command (distillation enforcement)
-
-**What:** Add a `/session-end` slash command that executes the distillation + wipe ritual.
-
-**Why:** CLAUDE.md says "on task done, wipe SESSION.md to template". In practice the model forgets or user doesn't say "task done" explicitly. High-signal work gets lost; SESSION.md bloats across tasks.
-
-**How:** `commands/session-end.md` slash command: (1) distil key decisions/gotchas to their permanent layers (IDENTITY.md / gotchas.md / project.md), (2) confirm with user what was promoted, (3) wipe SESSION.md to blank template with fresh `last_updated` and current `cwd:`. Optionally hook into Claude Code's `Stop` hook if supported — emit reminder if SESSION.md `last_updated` is within the last hour (active session just ended).
-
----
-
-### M/S — Enforce `last_updated` presence at session start
-
-**What:** Upgrade the "no `last_updated` marker" warning from a passive note to an actionable instruction.
-
-**Why:** Staleness detection only works if the model writes `last_updated:` on every SESSION.md update. The existing fallback message says "treat with suspicion" — the model may acknowledge it and continue without fixing the file. Future sessions stay broken.
-
-**How:** Change the fallback branch in `session-start.sh`:
-```
-NOTE: SESSION.md exists but has no last_updated marker.
-→ REQUIRED FIRST ACTION: add 'last_updated: <current UTC ISO>' to YAML frontmatter NOW, before any other response. Do not skip this.
-```
-Strong imperative wording rather than hedged advisory.
-
----
-
-## Testing & CI
-
-### M/S — pre-commit hook for this repo (dev-side)
-
-**What:** A repo-local git pre-commit hook (installed via `git config core.hooksPath .githooks` or documented one-liner): run `bats tests/` + warn if CHANGELOG.md is untouched while *.sh/commands/* changed (dev-workflow's mandatory triple).
-
-**Why:** dev-workflow.md discipline currently relies on memory. The v6.14 rename shipped without installing the renamed command anywhere — exactly what an automated triple-check would have caught.
-
----
-
-### M/S — extend bats coverage to codemap.sh and doctor.sh
-
-**What:** `tests/` covers hooks, onboard-report and install completeness (since v6.15.0). Add cases for `codemap.sh` (def/callers/outline against a fixture repo — would have caught the dead `grep -F "^sym"` lookup) and a `doctor.sh` smoke run.
-
-**Why:** codemap def was silently broken for several releases; only a behavioral test catches "command runs fine, returns nothing".
-
----
-
-### M/S — bats coverage for migrate.sh
-
-**What:** Behavioral tests for both migration passes against a fixture CLAUDE_HOME: Pass B (HTML-comment marker → YAML frontmatter, asserting the file is actually rewritten) and Pass A (legacy MEMORY.md / typed-prefix detection).
-
-**Why:** v6.16.0's shellcheck run revealed Pass B had been completely dead (`local` at top level under `set -e`) across multiple releases — zero test coverage meant zero signal. Same "runs fine, does nothing" class as the codemap bug.
-
----
-
 ## Notes
 
-### Current top queue (re-ranked 2026-07-05; all five H items + distillation timeline shipped in v6.16.0)
+### Current top queue (all H items + distillation timeline shipped v6.16.0; all 18 M-priority items shipped v6.17.0)
 
-1. **M/S — vault-doctor.sh** (absorbs SESSION cleanup cron) — content rots silently; now also the natural home for transcript-export retention checks.
-2. **M/S — Duplicate hook registration check in doctor.sh** — observed live; double token cost per session.
-3. **M/S — bats coverage for migrate.sh** (new) — Pass B was silently dead for multiple releases; only a behavioral test catches "runs fine, does nothing".
-4. **M/S — index.md auto-generation** — routing drift.
-5. **M/S — doctor dynamic self-test + CRLF check + version-drift nudge** — installed-copy health.
-6. **M/M — `/session-end` command** — now higher value: it's the enforcement point for the shipped distillation-timeline convention.
-7. Rest: `/onboard-memory` business flows, SESSION size warning, frontmatter format matrix, validate-json lib, L/S–L/L tail.
+The M-sweep is complete. What remains is one deferred M/L and the L-priority tail:
+
+1. **M/L — Lightweight vector search without qmd** *(deferred)* — the only unshipped M item; ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
+2. **L/M — merge-settings.sh fallback dedup** — re-running install can double-register a hook on jq-only systems.
+3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
 
 ### Legend
 

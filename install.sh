@@ -20,6 +20,10 @@ SRC=$(cd "$(dirname "$0")" && pwd)
 DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 
+# Shared JSON validator (python3 → node → jq).
+# shellcheck source=bin/lib/validate-json.sh
+source "${SRC}/bin/lib/validate-json.sh"
+
 # --- Helpers ---
 
 say() { printf '%s\n' "$*"; }
@@ -77,6 +81,7 @@ backup_and_install "$SRC/commands/memory.md"           "$CLAUDE_HOME/commands/me
 backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/memstat.md"
 backup_and_install "$SRC/commands/onboard-memory.md"   "$CLAUDE_HOME/commands/onboard-memory.md"
 backup_and_install "$SRC/commands/migrate-legacy-memory.md" "$CLAUDE_HOME/commands/migrate-legacy-memory.md"
+backup_and_install "$SRC/commands/session-end.md"      "$CLAUDE_HOME/commands/session-end.md"
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 backup_and_install "$SRC/bin/memstat.sh"               "$CLAUDE_HOME/bin/memstat.sh"
@@ -84,9 +89,13 @@ backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-s
 backup_and_install "$SRC/bin/onboard-report.sh"        "$CLAUDE_HOME/bin/onboard-report.sh"
 backup_and_install "$SRC/bin/transcript-export.sh"     "$CLAUDE_HOME/bin/transcript-export.sh"
 backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
+backup_and_install "$SRC/bin/vault-doctor.sh"          "$CLAUDE_HOME/bin/vault-doctor.sh"
+backup_and_install "$SRC/bin/gen-index.sh"             "$CLAUDE_HOME/bin/gen-index.sh"
+backup_and_install "$SRC/bin/uninstall.sh"             "$CLAUDE_HOME/bin/uninstall.sh"
 backup_and_install "$SRC/bin/mcp-recall.mjs"           "$CLAUDE_HOME/bin/mcp-recall.mjs"
 backup_and_install "$SRC/bin/lib/slug.sh"              "$CLAUDE_HOME/bin/lib/slug.sh"
 backup_and_install "$SRC/bin/lib/paths.sh"             "$CLAUDE_HOME/bin/lib/paths.sh"
+backup_and_install "$SRC/bin/lib/validate-json.sh"     "$CLAUDE_HOME/bin/lib/validate-json.sh"
 
 # Templates (referenced by CLAUDE.md protocol + /onboard-memory)
 if [[ $DRY_RUN -eq 0 ]]; then
@@ -195,23 +204,16 @@ fi
 if [[ $DRY_RUN -eq 0 ]]; then
   say "Validation:"
 
-  # 1. settings.json is valid JSON
-  # Pipe via stdin — Windows-native node/python can't resolve MSYS '/c/...' paths
-  # passed as string args (false "invalid JSON"). bash resolves the path for cat.
-  if command -v node >/dev/null 2>&1; then
-    if cat "$CLAUDE_HOME/settings.json" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))" 2>/dev/null; then
-      say "  ✓ settings.json valid JSON"
-    else
-      say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
-    fi
-  elif command -v python3 >/dev/null 2>&1; then
-    if cat "$CLAUDE_HOME/settings.json" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
-      say "  ✓ settings.json valid JSON"
-    else
-      say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
-    fi
+  # 1. settings.json is valid JSON (shared lib feeds contents via stdin —
+  # Windows-native node/python can't resolve MSYS '/c/...' path args).
+  _vrc=0
+  _validate_json_file "$CLAUDE_HOME/settings.json" || _vrc=$?
+  if [[ $_vrc -eq 0 ]]; then
+    say "  ✓ settings.json valid JSON"
+  elif [[ $_vrc -eq 1 ]]; then
+    say "  ✗ settings.json invalid JSON — fix before starting Claude Code"
   else
-    say "  ? settings.json not validated (node/python3 not found)"
+    say "  ? settings.json not validated (python3/node/jq not found)"
   fi
 
   # 2. Hook syntax check

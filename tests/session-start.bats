@@ -179,6 +179,99 @@ EOF
   [[ "$output" == *"secrets/**"* ]]
 }
 
+@test "staleness fires on metadata-nested last_updated (indexer format, matrix)" {
+  make_session "$PWD" <<EOF
+---
+name: ""
+metadata:
+  node_type: memory
+  last_updated: $(iso_ago $((3*86400)))
+  cwd: $PWD
+---
+# Goal
+old task
+EOF
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"STALENESS WARNING"* ]]
+}
+
+@test "SESSION.md size warning fires above 4KB" {
+  {
+    printf -- '---\nlast_updated: %s\ncwd: %s\n---\n' "$(iso_ago 60)" "$PWD"
+    head -c 5000 /dev/zero | tr '\0' 'x'
+  } | make_session "$PWD"
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SESSION.md SIZE"* ]]
+}
+
+@test "no size warning for a small SESSION.md" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: $PWD
+---
+# Goal
+tiny
+EOF
+  run_hook
+  [[ "$output" != *"SESSION.md SIZE"* ]]
+}
+
+@test "missing last_updated note is a strong imperative" {
+  make_session "$PWD" <<EOF
+# Goal
+no frontmatter
+EOF
+  run_hook
+  [[ "$output" == *"REQUIRED FIRST ACTION"* ]]
+}
+
+@test "version-drift nudge fires when source CHANGELOG is newer" {
+  printf 'v1.0.0\n' > "$TEST_CLAUDE_HOME/.memory-version"
+  fake_src="$(mktemp -d)"
+  printf '## v9.9.9 — test\n' > "$fake_src/CHANGELOG.md"
+  printf '%s\n' "$fake_src" > "$TEST_CLAUDE_HOME/.memory-source"
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"UPDATE AVAILABLE"* ]]
+  [[ "$output" == *"v9.9.9"* ]]
+  rm -rf "$fake_src"
+}
+
+@test "version-drift nudge does not fire backwards (installed newer)" {
+  printf 'v9.9.9\n' > "$TEST_CLAUDE_HOME/.memory-version"
+  fake_src="$(mktemp -d)"
+  printf '## v1.0.0 — test\n' > "$fake_src/CHANGELOG.md"
+  printf '%s\n' "$fake_src" > "$TEST_CLAUDE_HOME/.memory-source"
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"UPDATE AVAILABLE"* ]]
+  rm -rf "$fake_src"
+}
+
+@test "version-drift check is debounced (marker suppresses second run)" {
+  printf 'v1.0.0\n' > "$TEST_CLAUDE_HOME/.memory-version"
+  fake_src="$(mktemp -d)"
+  printf '## v9.9.9 — test\n' > "$fake_src/CHANGELOG.md"
+  printf '%s\n' "$fake_src" > "$TEST_CLAUDE_HOME/.memory-source"
+  run_hook
+  [[ "$output" == *"UPDATE AVAILABLE"* ]]
+  # Second run within the week: marker is fresh, no repeat nudge.
+  run_hook
+  [[ "$output" != *"UPDATE AVAILABLE"* ]]
+  rm -rf "$fake_src"
+}
+
+@test "hook-trace.log rotation caps the log at 2000 lines" {
+  seq 1 5000 | sed 's/^/line /' > "$TEST_CLAUDE_HOME/debug/hook-trace.log"
+  run_hook
+  [ "$status" -eq 0 ]
+  # After rotation the log holds ~2000 lines (+ this run's own append lines).
+  [ "$(wc -l < "$TEST_CLAUDE_HOME/debug/hook-trace.log")" -lt 2100 ]
+}
+
 @test "output JSON stays valid with SESSION.md containing quotes and backslashes" {
   make_session "$PWD" <<'EOF'
 ---
