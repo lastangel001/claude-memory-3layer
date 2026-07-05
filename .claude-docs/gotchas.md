@@ -37,6 +37,18 @@ awk -F'\t' -v s="$arg" '$1 == s' "$root/.codemap.tags"
 
 **Lesson:** `-F` and anchors are mutually exclusive. Need "literal string at line start" → awk string compare, or `grep -E "^$(escaped)"` with metachars escaped. Never combine `-F` with `^`/`$`.
 
+## bash `local` outside a function errors — and `set -e` turns it fatal
+
+confidence: verified
+
+**Symptom:** `migrate.sh` Pass B (HTML-marker → YAML frontmatter) never migrated anything; with files present it died silently on the first candidate.
+
+**Cause:** `local _html_outer=...` sat in a top-level `for` loop (v6.13 regex-hardening moved the pattern into a variable and reflexively kept the `local` from its function origin). `local` outside a function is an error (`local: can only be used in a function`), and under `set -e` that kills the whole script on the FIRST loop iteration — before any output.
+
+**Fix (v6.16.0):** plain assignment. Found by shellcheck SC2168 the day CI got a shellcheck step.
+
+**Lesson:** moving code out of a function → strip `local`. shellcheck catches this class statically; behavioral bats coverage for migrate.sh is still an open IDEAS item.
+
 ## bash printf: format string starting with `-` is parsed as an option
 
 **Symptom:** `printf '- %s\n' "$f"` → `printf: - : invalid option`, exit 2; under `set -euo pipefail` kills the whole script (broke onboard-report.sh sections 4/6-10 on any repo with `.gitignore`).

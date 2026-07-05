@@ -263,6 +263,33 @@ You get:
 - **`/memory status | auto on|off | refresh`** — protocol controls; `/memory auto on` flips this session into auto-capture mode (model writes observations without waiting for explicit "запомни")
 - **`/memstat [--watch]`** — "task manager" for the memory subsystem: running qmd/ctags processes, index progress (vectors vs pending), refresh schedule, and a stall/health check. Use when `node.exe` is eating CPU and you want to see what it's doing.
 
+### 4. MCP server — memory for subagents and headless runs (optional)
+
+`/recall` is a slash command, so subagents / task runners / `claude -p` headless mode can't call it. The bundled zero-dependency MCP server exposes the same search as callable tools:
+
+```bash
+# Register once, user scope (available in every project):
+claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
+```
+
+Tools exposed: `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` (returns L0 IDENTITY.md). Requires Node 18+ and `qmd` on PATH for search; `get_identity` works without qmd. No daemon — Claude Code spawns it per session over stdio.
+
+### 5. Verbatim transcript export (rolling recall layer)
+
+Everything the model doesn't write to SESSION.md normally dies at compact. Claude Code itself keeps full session transcripts (`~/.claude/projects/<slug>/*.jsonl`) — the SessionStart hook exports them (debounced, background, incremental) to searchable markdown:
+
+```
+~/.claude/projects/<slug>/memory/raw/transcripts/<session>.md
+```
+
+qmd's `claude-projects` collection picks these up on the next index refresh, so `/recall` (and `search_memory` via MCP) can quote past conversations verbatim.
+
+Controls:
+- Opt out globally: `touch ~/.claude/.transcript-export-disabled`
+- A project with `.claude-private` in its root is never exported
+- `<private>...</private>` blocks are stripped from exports
+- Retention: `TRANSCRIPT_KEEP_DAYS` (default 30) — older exports are deleted; size cap per file: `TRANSCRIPT_MAX_BYTES` (default 300000)
+
 ## Growing the knowledge store (flat + tags + prefixes)
 
 When a project's L1b (`<repo>/.claude-docs/`) or L1-fallback (`~/.claude/projects/<slug>/memory/`) grows beyond a handful of files, follow this convention (codified in `CLAUDE.md` under "Knowledge store organization"):
@@ -363,7 +390,9 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 
 ## Files in this archive
 
-- `CLAUDE.md` — the protocol spec (replaces default Anthropic memory instructions; goes to `~/.claude/CLAUDE.md`)
+- `PROTOCOL.md` — the protocol spec, slim core (replaces default Anthropic memory instructions; goes to `~/.claude/CLAUDE.md`)
+- `templates/protocol/{workflows,knowledge-store,obsidian}.md` — protocol reference docs, read on demand (go to `~/.claude/templates/protocol/`)
+- `CLAUDE.md` — dev entry point for agents working on THIS repo (not installed)
 - `memory/IDENTITY.md` — L0 template with placeholders (goes to `~/.claude/memory/IDENTITY.md`)
 - `templates/repo/CLAUDE.md` — L1a template (thin entry point for a project repo)
 - `templates/repo/.claude-docs/{index,gotchas,architecture,conventions}.md` — L1b templates
@@ -373,7 +402,8 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 - `hooks/pre-compact.sh` — flush reminder (privacy, compression, CWD rules)
 - `hooks/post-tool-use.sh` — selective auto-capture (git commit, CLAUDE.md / .claude-docs writes)
 - `commands/{recall,codemap,memory,memstat,onboard-memory,migrate-legacy-memory}.md` — slash commands
-- `bin/{codemap,doctor,memstat,merge-settings,onboard-report,update}.sh` — support scripts
+- `bin/{codemap,doctor,memstat,merge-settings,onboard-report,transcript-export,update}.sh` — support scripts
+- `bin/mcp-recall.mjs` — zero-dependency MCP server (memory search for subagents/headless)
 - `bin/lib/{slug,paths}.sh` — shared libraries (slug formula, PATH augmentation)
 - `install.sh` / `migrate.sh` — installer and legacy-format migration helper
 - `settings.snippet.json` — hooks block to merge into `~/.claude/settings.json`

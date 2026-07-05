@@ -46,24 +46,16 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] DRY `_add_path` → `bin/lib/paths.sh` (was duplicated in session-start.sh + memstat.sh)
 - [x] bats-core test suite (`tests/`: 29 cases — session-start staleness/CWD/privacy-multiline/compression/JSON-validity, post-tool-use capture patterns, onboard-report printf regression, install.sh completeness sanity) + GitHub Actions CI (ubuntu + windows Git Bash, `bash -n` + `bats tests/`)
 - [x] Hook detection by command, not event name (`install.sh`: foreign tools' hooks on same events no longer cause silently-skipped registration); `update.sh --dry-run` no longer pulls (fetch + preview only); jq validator in merge-settings; INSTALL.md update-flow section (v6.15.1)
+- [x] Protocol slimming + double-load dedup: `PROTOCOL.md` slim core → `~/.claude/CLAUDE.md`; fat sections → `templates/protocol/{workflows,knowledge-store,obsidian}.md` on demand; repo CLAUDE.md now thin dev entry (v6.16.0)
+- [x] Verbatim transcript export: `bin/transcript-export.sh`, SessionStart-wired, incremental + rolling 30d + `<private>`-stripped + `.claude-private`-aware; `/recall` now searches past conversations (v6.16.0)
+- [x] MCP wrapper for `/recall`: `bin/mcp-recall.mjs` — zero-dep stdio server, `search_memory` + `get_identity` for subagents/headless (v6.16.0)
+- [x] Fact lifecycle: `confidence: verified|inferred` + SUPERSEDE + dated `## History` in gotchas/decisions; protocol rule 7 + templates + onboard (v6.16.0)
+- [x] Distillation timeline line in project.md (`## Timeline`, one line per wrapped task) (v6.16.0)
+- [x] shellcheck in CI (ubuntu, `-S warning`, all scripts) + cleanup; found & fixed dead `migrate.sh` Pass B (`local` at top level under `set -e`) (v6.16.0)
 
 ---
 
 ## Backlog
-
-### H/M — MCP wrapper for `/recall`
-
-**What:** Wrap the BM25+GGUF search from `qmd` as a minimal MCP server with two tools:
-- `search_memory(query, limit?)` → `[{snippet, score, file, tags}]`
-- `get_identity()` → contents of `IDENTITY.md`
-
-**Why:** `/recall` is a slash command — agents in agentic loops (subagents, task runners, headless mode) cannot call slash commands. An MCP tool is callable programmatically inside any loop.
-
-**How:** Node.js MCP server (~100 lines) that shells out to `qmd search`. No new storage layer — reuses existing markdown files and qmd index. Register in `settings.snippet.json` under `mcpServers`.
-
-**Tradeoff:** Adds a Node.js daemon. Must be optional and installable separately.
-
----
 
 ### M/S — `/onboard-memory` domain / business-flow section
 
@@ -88,6 +80,8 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 ---
 
 ### M/M — Periodic SESSION.md cleanup cron
+
+> **Absorbed by** "vault-doctor.sh" (Memory quality & token budget section) — implement as its stale-session check + `--fix` mode rather than a standalone cron.
 
 **What:** A script (or cron entry added by `install.sh`) that finds SESSION.md files with `last_updated` older than N days (default: 30) and wipes them to the empty template.
 
@@ -124,6 +118,62 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 **Why:** IDENTITY.md is the most irreplaceable file — machine wipe = total loss. Users who work across multiple machines have no sync path today.
 
 **Tradeoff:** Significant scope. Must be opt-in, encrypted, and auditable. Out of scope for core package — better as a separate companion tool.
+
+---
+
+## Memory quality & token budget (iva analysis, 2026-07-05)
+
+Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (willow-tree memory: verbatim daily transcripts → rollup summaries → always-on CORE.md + typed cards). The H-priority items from this section (fact lifecycle, protocol slimming, transcript indexing) + distillation timeline shipped in v6.16.0 — see "Already shipped".
+
+### M/S — index.md auto-generation (iva `moc.generate` analog)
+
+**What:** Script regenerates the routing table in `.claude-docs/index.md` from each doc's frontmatter (`description`, `tags`). Hand-written routing notes survive in a marked manual block.
+
+**Why:** index.md is maintained by hand and drifts — new docs get forgotten, deleted docs leave dead rows. iva regenerates MOC.md nightly for the same reason.
+
+**How:** `bin/gen-index.sh` (bash + awk over frontmatter); callable from `/onboard-memory` UPDATE mode and vault-doctor.
+
+---
+
+### M/S — vault-doctor.sh (memory content health, mechanical)
+
+**What:** `bin/vault-doctor.sh` — deterministic, no-LLM checks over memory content (vs `doctor.sh` which checks the install): broken relative md links in `.claude-docs/`, docs missing frontmatter, docs absent from index.md (orphans), IDENTITY.md > 25 lines, SESSION.md oversize, stale sessions (>30d). Absorbs the "Periodic SESSION.md cleanup cron" idea below as one of its checks (`--fix` mode wipes stale sessions).
+
+**Why:** Content rots silently today; install-doctor can't see it. iva runs exactly this split: LLM does rollup, mechanical doctor does hygiene.
+
+---
+
+### M/S — Duplicate hook registration check in doctor.sh
+
+**What:** Detect the same command registered more than once for the same event across settings files; warn with file/event.
+
+**Why:** Observed live: a SessionStart context block injected twice → double token cost every session + double execution. Easy to cause via repeated installs/merges, invisible without tracing.
+
+**How:** jq/python pass over merged `settings.json` + `settings.local.json` in `doctor.sh`.
+
+---
+
+### L/S — Trim `# Recent turns` verbatim quota
+
+**What:** Reduce from 5 verbatim turns to 3, or gate behind a flag file.
+
+**Why:** Verbatim quotes are token-heavy on every reload; after a compact the summary already carries the gist. Tradeoff: protocol explicitly values "live texture" the summarizer paraphrases away — measure before cutting.
+
+---
+
+### L/S — Verify qmd indexes frontmatter fields
+
+**What:** Check whether qmd's FTS index covers frontmatter values (`description`, `tags`, names). If not: document as a known `/recall` limitation, or prepend key frontmatter fields into the indexed body via the transcript-export/gen-index tooling.
+
+**Why:** iva weights frontmatter meta-fields high because name/company facts often exist ONLY in frontmatter — search misses them otherwise. Same risk applies to our cards-style docs.
+
+---
+
+### L/L — Link-graph rerank for /recall
+
+**What:** Rerank BM25 hits by markdown-link proximity between memory files (iva reranks via its nightly-built vault graph).
+
+**Why:** Related docs surface together. Requires patching qmd or a post-processing wrapper + a link-graph builder. Low value until memory stores grow large; defer.
 
 ---
 
@@ -234,14 +284,6 @@ Strong imperative wording rather than hedged advisory.
 
 ## Testing & CI
 
-### H/S — shellcheck in CI
-
-**What:** CI runs only `bash -n` (syntax). Add a shellcheck step (ubuntu job is enough) over `install.sh migrate.sh hooks/*.sh bin/**/*.sh` + one-time cleanup of existing warnings (or a pinned `.shellcheckrc` with justified excludes).
-
-**Why:** shellcheck statically catches the exact bug classes found in the v6.15.0 audit: the `&&`/`||` precedence bug (SC2107-family), unquoted variables, dead anchored greps would at least get flagged for review. Cheapest remaining safety net.
-
----
-
 ### M/S — pre-commit hook for this repo (dev-side)
 
 **What:** A repo-local git pre-commit hook (installed via `git config core.hooksPath .githooks` or documented one-liner): run `bats tests/` + warn if CHANGELOG.md is untouched while *.sh/commands/* changed (dev-workflow's mandatory triple).
@@ -258,7 +300,27 @@ Strong imperative wording rather than hedged advisory.
 
 ---
 
+### M/S — bats coverage for migrate.sh
+
+**What:** Behavioral tests for both migration passes against a fixture CLAUDE_HOME: Pass B (HTML-comment marker → YAML frontmatter, asserting the file is actually rewritten) and Pass A (legacy MEMORY.md / typed-prefix detection).
+
+**Why:** v6.16.0's shellcheck run revealed Pass B had been completely dead (`local` at top level under `set -e`) across multiple releases — zero test coverage meant zero signal. Same "runs fine, does nothing" class as the codemap bug.
+
+---
+
 ## Notes
+
+### Current top queue (re-ranked 2026-07-05; all five H items + distillation timeline shipped in v6.16.0)
+
+1. **M/S — vault-doctor.sh** (absorbs SESSION cleanup cron) — content rots silently; now also the natural home for transcript-export retention checks.
+2. **M/S — Duplicate hook registration check in doctor.sh** — observed live; double token cost per session.
+3. **M/S — bats coverage for migrate.sh** (new) — Pass B was silently dead for multiple releases; only a behavioral test catches "runs fine, does nothing".
+4. **M/S — index.md auto-generation** — routing drift.
+5. **M/S — doctor dynamic self-test + CRLF check + version-drift nudge** — installed-copy health.
+6. **M/M — `/session-end` command** — now higher value: it's the enforcement point for the shipped distillation-timeline convention.
+7. Rest: `/onboard-memory` business flows, SESSION size warning, frontmatter format matrix, validate-json lib, L/S–L/L tail.
+
+### Legend
 
 - Priority (H/M/L) = user-impact × frequency of the pain point.
 - Effort (S/M/L) = engineering days: S < 1d, M = 1-3d, L > 3d.

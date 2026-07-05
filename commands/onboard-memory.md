@@ -128,8 +128,12 @@ From FIXME/HACK grep and `@deprecated` markers. Per entry:
 ```markdown
 ## <Short title>
 
+confidence: inferred
+
 <What the gotcha is. Why it bites. Fix or workaround.>
 ```
+
+Onboard-generated entries are always `confidence: inferred` (deduced from reading, not reproduced) — upgrade to `verified` when a session actually hits/reproduces the gotcha. Never delete an outdated entry: mark `status: superseded` and move the old claim to a dated `## History` line.
 
 Non-obvious only. Skip trivial TODOs. Leave file with header only if auto-scan
 found nothing — it fills in during real work.

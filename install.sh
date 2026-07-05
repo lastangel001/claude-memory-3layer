@@ -23,6 +23,7 @@ DRY_RUN=0
 # --- Helpers ---
 
 say() { printf '%s\n' "$*"; }
+# shellcheck disable=SC2294  # eval-as-string is the point: callers pass pre-quoted commands
 do_or_dry() { if [[ $DRY_RUN -eq 1 ]]; then say "  [dry] $*"; else eval "$@"; fi; }
 
 backup_and_install() {
@@ -64,7 +65,9 @@ fi
 # --- Protocol + tooling (safe to overwrite, backup if differs) ---
 
 say "Protocol + tools:"
-backup_and_install "$SRC/CLAUDE.md"                    "$CLAUDE_HOME/CLAUDE.md"
+# PROTOCOL.md is the slim always-loaded core; fat reference sections live in
+# templates/protocol/ and are read on demand (v6.16.0 token-budget split).
+backup_and_install "$SRC/PROTOCOL.md"                  "$CLAUDE_HOME/CLAUDE.md"
 backup_and_install "$SRC/hooks/session-start.sh"       "$CLAUDE_HOME/hooks/session-start.sh"
 backup_and_install "$SRC/hooks/pre-compact.sh"         "$CLAUDE_HOME/hooks/pre-compact.sh"
 backup_and_install "$SRC/hooks/post-tool-use.sh"       "$CLAUDE_HOME/hooks/post-tool-use.sh"
@@ -79,19 +82,26 @@ backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.
 backup_and_install "$SRC/bin/memstat.sh"               "$CLAUDE_HOME/bin/memstat.sh"
 backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"
 backup_and_install "$SRC/bin/onboard-report.sh"        "$CLAUDE_HOME/bin/onboard-report.sh"
+backup_and_install "$SRC/bin/transcript-export.sh"     "$CLAUDE_HOME/bin/transcript-export.sh"
 backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
+backup_and_install "$SRC/bin/mcp-recall.mjs"           "$CLAUDE_HOME/bin/mcp-recall.mjs"
 backup_and_install "$SRC/bin/lib/slug.sh"              "$CLAUDE_HOME/bin/lib/slug.sh"
 backup_and_install "$SRC/bin/lib/paths.sh"             "$CLAUDE_HOME/bin/lib/paths.sh"
 
 # Templates (referenced by CLAUDE.md protocol + /onboard-memory)
 if [[ $DRY_RUN -eq 0 ]]; then
-  mkdir -p "$CLAUDE_HOME/templates/repo/.claude-docs"
+  mkdir -p "$CLAUDE_HOME/templates/repo/.claude-docs" "$CLAUDE_HOME/templates/protocol"
 fi
 backup_and_install "$SRC/templates/project.md.fallback.template" "$CLAUDE_HOME/templates/project.md.fallback.template"
 backup_and_install "$SRC/templates/repo/CLAUDE.md"               "$CLAUDE_HOME/templates/repo/CLAUDE.md"
 for _t in "$SRC/templates/repo/.claude-docs/"*.md; do
   [[ -f "$_t" ]] || continue  # unmatched glob (broken/partial archive) — skip, don't crash
   backup_and_install "$_t" "$CLAUDE_HOME/templates/repo/.claude-docs/$(basename "$_t")"
+done
+# Protocol reference docs (read on demand — pointed at by the slim core)
+for _t in "$SRC/templates/protocol/"*.md; do
+  [[ -f "$_t" ]] || continue
+  backup_and_install "$_t" "$CLAUDE_HOME/templates/protocol/$(basename "$_t")"
 done
 
 if [[ $DRY_RUN -eq 0 ]]; then
@@ -231,6 +241,13 @@ say "Next steps:"
 if [[ ! -f "$CLAUDE_HOME/memory/IDENTITY.md" ]] || \
    grep -q "<your name" "$CLAUDE_HOME/memory/IDENTITY.md" 2>/dev/null; then
   say "  - Edit $CLAUDE_HOME/memory/IDENTITY.md (≤25 lines)"
+fi
+# MCP hint: opt-in by design (tool defs cost context in every session), but
+# remind when not yet registered. User-scope MCP config lives in ~/.claude.json
+# (fixed location, independent of CLAUDE_HOME).
+if ! grep -q '"memory-recall"' "$HOME/.claude.json" 2>/dev/null; then
+  say "  - Optional: memory search for subagents/headless (one-time, this machine):"
+  say "      claude mcp add --scope user memory-recall -- node $CLAUDE_HOME/bin/mcp-recall.mjs"
 fi
 say "  - Optional: install retrieval tools (qmd, ctags, ripgrep) — see INSTALL.md"
 say "  - Start a new Claude Code session — hooks fire automatically"

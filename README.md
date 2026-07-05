@@ -69,6 +69,8 @@ Claude notices `hasMany` relationships in Laravel return soft-deleted records si
 ```markdown
 ## Laravel: soft-delete not applied to relationship queries
 
+confidence: verified
+
 `hasMany`/`belongsToMany` don't apply global scope by default.
 `$user->posts` includes soft-deleted posts with no warning.
 
@@ -76,6 +78,8 @@ Fix: `withoutTrashed()` explicitly, or override `newQuery()` in the model.
 ```
 
 Every future session in this repo has this before writing any relationship query. Same wall — never hit twice.
+
+Facts carry a lifecycle: `confidence: verified` (reproduced) vs `inferred` (deduced from reading) — the model asserts the first and hedges the second. An outdated fact is never silently deleted: it gets `status: superseded` and a dated line in `## History`, so the top of the file is always current truth and the trail survives.
 
 ---
 
@@ -156,6 +160,14 @@ Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors e
 /memstat --watch
 ```
 
+### MCP: `search_memory` / `get_identity` — memory for subagents
+
+Slash commands are unreachable from subagents, task runners and `claude -p` headless mode. `bin/mcp-recall.mjs` (zero dependencies, stdio, no daemon) exposes the same BM25 search and the L0 identity as MCP tools callable inside any agentic loop:
+
+```bash
+claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
+```
+
 ## Hooks (enforce discipline)
 
 - **SessionStart** — injects protocol reminder + active checks on every session open:
@@ -164,6 +176,7 @@ Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors e
   - *CWD auto-inject* — computes canonical path and injects it as a ready-to-paste value so model always has the correct `cwd:` for new `SESSION.md` files
   - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`; CRLF-safe)
   - *Private path exclusions* — if `.claude-private` exists at the project root, reads it as a glob pattern list (one per line, `#` comments ignored) and instructs the model to treat matching paths as non-existent for all memory and capture purposes
+  - *Transcript export* — exports Claude Code's own session transcripts (`.jsonl`) to searchable markdown under `memory/raw/transcripts/` (incremental, `<private>`-stripped, 30-day rolling window, opt-out via `~/.claude/.transcript-export-disabled`) — so `/recall` can quote past conversations even when nothing was written to SESSION.md
   - Also kicks background `qmd update` debounced 6h (atomic marker — parallel sessions don't double-fire)
 - **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
@@ -212,7 +225,7 @@ The SessionStart hook strips all `<private>` blocks from `SESSION.md` in-place b
 ## What's deliberately NOT in it
 
 - ✗ **Blind auto-capture** of arbitrary tool output — that's the failure mode `AgentMemory` documents in their open issues (silent data loss, runaway logs). The PostToolUse hook captures exactly 3 patterns (git commit, CLAUDE.md write, .claude-docs write); everything else requires explicit "remember".
-- ✗ **MCP server with 50+ tools** — context-window tax in every request, whether you use those tools or not.
+- ✗ **MCP server with 50+ tools** — context-window tax in every request, whether you use those tools or not. (The optional bundled `mcp-recall` exposes exactly two: `search_memory`, `get_identity`.)
 - ✗ **Persistent code-graph daemon** with per-project SQLite — `/codemap` is on-demand instead. Re-scan in ~1s for medium repos.
 - ✗ **Vector blob** you can't `diff`. Memory is markdown you can read with your eyes.
 - ✗ **Cloud, OpenAI keys, embedding APIs** — qmd uses local GGUF models (embeddinggemma-300M, qwen3-reranker, qmd-query-expansion).
@@ -225,6 +238,8 @@ See [INSTALL.md](INSTALL.md) for full instructions across Windows / macOS / Linu
 # 1. Run install.sh — drops everything into ~/.claude/, merges settings.json automatically
 ./install.sh
 # 2. Edit ~/.claude/memory/IDENTITY.md (≤25 lines, who you are)
+# 3. Optional: memory search for subagents / headless runs (one-time, per machine)
+claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 # 4. For retrieval tools (optional, recommended):
 winget install OpenJS.NodeJS.LTS UniversalCtags.Ctags BurntSushi.ripgrep.MSVC
 npm install -g @tobilu/qmd

@@ -27,6 +27,12 @@ jobs:
           done
           exit $rc
 
+      - name: shellcheck
+        # ubuntu only: shellcheck is preinstalled on ubuntu-latest; windows job
+        # covers Git Bash runtime behavior, static analysis needs one OS.
+        if: matrix.os == 'ubuntu-latest'
+        run: shellcheck -S warning install.sh migrate.sh hooks/*.sh bin/*.sh bin/lib/*.sh
+
       - name: Install bats-core
         # git clone instead of npm -g: avoids EACCES on ubuntu and works
         # identically under Git Bash on windows ($HOME is a unix-style path).

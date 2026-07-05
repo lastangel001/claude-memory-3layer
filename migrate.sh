@@ -82,7 +82,9 @@ shopt -s nullglob
 for f in "$CLAUDE_HOME/memory"/*.md "$CLAUDE_HOME/projects"/*/memory/*.md; do
   [[ -f "$f" ]] || continue
   first=$(head -n1 "$f" 2>/dev/null)
-  local _html_outer='^[[:space:]]*\<!--[[:space:]]*last_updated:'
+  # NOT `local` — top-level loop; `local` outside a function errors and under
+  # `set -e` killed Pass B on the first file (fixed v6.16.0).
+  _html_outer='^[[:space:]]*\<!--[[:space:]]*last_updated:'
   if [[ "$first" =~ $_html_outer ]]; then
     migrate_html_marker "$f"
     count_b=$((count_b + 1))

@@ -122,6 +122,7 @@ say "Current project:"
 # shellcheck source=lib/slug.sh
 source "${CLAUDE_HOME}/bin/lib/slug.sh"
 _compute_slug
+# shellcheck disable=SC2154  # slug set by sourced _compute_slug
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 if [[ ! -f "$session_file" ]]; then
   warn "No SESSION.md for current project (normal for new projects)"

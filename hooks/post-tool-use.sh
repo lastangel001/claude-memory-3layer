@@ -85,6 +85,7 @@ if [[ -z "$tool_name" ]]; then exit 0; fi
 source "${CLAUDE_HOME}/bin/lib/slug.sh"
 _compute_slug
 
+# shellcheck disable=SC2154  # slug set by sourced _compute_slug
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 
 # No SESSION.md yet means no substantive work started — nothing to capture.

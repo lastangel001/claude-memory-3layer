@@ -13,6 +13,7 @@
 #
 # Optional arg: _compute_slug [cwd]  (defaults to $PWD)
 
+# shellcheck disable=SC2034  # slug + current_cwd_canonical are set FOR the sourcing script
 _compute_slug() {
   local _cwd="${1:-$PWD}"
   slug=""

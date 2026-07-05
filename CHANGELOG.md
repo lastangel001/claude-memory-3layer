@@ -1,5 +1,25 @@
 # Changelog
 
+## v6.16.0 — 2026-07-05 — token-budget split, verbatim recall layer, MCP, fact lifecycle
+
+All five H-priority backlog items shipped (from the analysis session vs smixs/iva memory architecture).
+
+**Added**
+- **`PROTOCOL.md` — slim always-loaded protocol core (~150 lines)**: the ~320-line protocol cost ~9k tokens in *every* session of *every* project, and loaded **twice** (~18k) inside this repo because the repo's `CLAUDE.md` was a full copy. The core (layers, rules, session-start ritual, SESSION.md template, tools) now installs to `~/.claude/CLAUDE.md`; fat reference sections moved to on-demand docs `templates/protocol/{workflows,knowledge-store,obsidian}.md` (installed to `~/.claude/templates/protocol/`). This repo's `CLAUDE.md` is now a thin dev entry point — no protocol copy.
+- **Verbatim transcript export (`bin/transcript-export.sh`)**: SessionStart exports Claude Code's own `.jsonl` session transcripts to searchable markdown under `memory/raw/transcripts/` (incremental, debounced with the qmd refresh, background). Closes the biggest data-loss hole: context the model never wrote to SESSION.md used to die at compact — now `/recall` can quote past conversations verbatim. Privacy: `<private>` blocks stripped, projects with `.claude-private` skipped entirely, opt-out flag `~/.claude/.transcript-export-disabled`, 30-day rolling retention (`TRANSCRIPT_KEEP_DAYS`), 300 KB size cap (`TRANSCRIPT_MAX_BYTES`). python3 → node parser fallback; 5 bats cases.
+- **MCP server `bin/mcp-recall.mjs`** (zero dependencies, stdio, no daemon): exposes `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` to subagents, task runners and headless `claude -p` — contexts that cannot call slash commands. Register: `claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs`.
+- **Fact lifecycle for gotchas/decisions**: `confidence: verified|inferred` tag (assert vs hedge) and SUPERSEDE semantics — outdated facts get `status: superseded` + a dated `## History` line instead of silent deletion/rewrite. Top of file = current truth, History = trail. Wired into the protocol (rule 7), the gotchas template, and `/onboard-memory` (onboard-generated entries start as `inferred`).
+- **Distillation timeline**: task wrap-up now appends one line `- YYYY-MM-DD: <task> — <outcome>` to `## Timeline` in `project.md` before wiping SESSION.md — answers "what did I do on this project in May" without resurrecting a journal layer.
+- **shellcheck in CI** (ubuntu job, `-S warning`, all shell scripts) + full cleanup of existing findings.
+
+**Fixed**
+- **`migrate.sh` Pass B was completely dead**: `local` used at top level (outside any function) errors on every file iteration, and under `set -e` aborted the script on the first candidate file — HTML-comment → YAML frontmatter migration never ran. Found by the new shellcheck pass (SC2168).
+
+**Changed**
+- `session-start.sh`: slug computed before the background block (transcript export needs it); export runs before `qmd update` so fresh exports land in the same index refresh.
+- `install.sh` "Next steps" now prints the ready-to-paste `claude mcp add` command when `memory-recall` is not yet registered in `~/.claude.json` (registration stays opt-in); same step added to README quick start.
+- tests: 38 cases (+5 transcript-export); shellcheck directives documented inline where variables are set by sourced libraries.
+
 ## v6.15.1 — 2026-06-11 — install/update logic audit fixes
 
 Re-verification of the install/update path with live scenarios in isolated environments surfaced one high-impact detection bug and several smaller issues.

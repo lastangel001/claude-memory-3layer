@@ -21,6 +21,12 @@ _hook_error() {
 }
 trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
 
+# Compute project slug + canonical cwd via shared library.
+# Needed before the background block below (transcript export is per-slug).
+# shellcheck source=../bin/lib/slug.sh
+source "${CLAUDE_HOME}/bin/lib/slug.sh"
+_compute_slug
+
 # --- qmd FTS index auto-refresh (debounced, background) ---
 # Runs ONLY the lightweight `qmd update` (BM25/FTS rebuild) in background if
 # last refresh was >6h ago, or if forced via QMD_FORCE_REFRESH=1. Cheap and
@@ -60,6 +66,13 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
     # shellcheck source=../bin/lib/paths.sh
     source "${CLAUDE_HOME}/bin/lib/paths.sh"
     _augment_node_path
+    # Verbatim transcript export (rolling window) BEFORE qmd update so fresh
+    # exports land in the same index refresh. Opt-out + privacy handled inside.
+    if [[ -x "$CLAUDE_HOME/bin/transcript-export.sh" ]]; then
+      # shellcheck disable=SC2154  # slug set by _compute_slug above
+      bash "$CLAUDE_HOME/bin/transcript-export.sh" "$slug" \
+        >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1 || true
+    fi
     if command -v qmd >/dev/null 2>&1; then
       qmd update >> "$CLAUDE_HOME/logs/qmd-refresh.log" 2>&1
     fi
@@ -67,11 +80,7 @@ if [[ "$qmd_refresh_needed" == "1" ]]; then
   disown 2>/dev/null || true
 fi
 
-# Compute project slug + canonical cwd via shared library.
-# shellcheck source=../bin/lib/slug.sh
-source "${CLAUDE_HOME}/bin/lib/slug.sh"
-_compute_slug
-
+# shellcheck disable=SC2154  # slug + current_cwd_canonical set by sourced _compute_slug
 session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
 
 stale_warning=""
@@ -108,6 +117,7 @@ if [[ -f "$session_file" ]]; then
   # frontmatter, nesting fields under `metadata:` (see gotchas.md).
   session_cwd=$(sed -n 's/^[[:space:]]*cwd:[[:space:]]*//p' "$session_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
   if [[ -n "$session_cwd" ]]; then
+    # shellcheck disable=SC2154  # current_cwd_canonical set by sourced _compute_slug
     if [[ "$session_cwd" != "$current_cwd_canonical" && "$session_cwd" != "$PWD" ]]; then
       cwd_mismatch_warning=$'\n\nCWD MISMATCH — DO NOT CONTINUE PREVIOUS SESSION: SESSION.md was written in ['"${session_cwd}"$']. Current project is ['"${current_cwd_canonical}"$']. The loaded state belongs to a DIFFERENT PROJECT. Ignore all content from SESSION.md. Create a fresh SESSION.md when substantive work begins in the current project.'
       echo "[$(date -Iseconds)] CWD mismatch: session_cwd=${session_cwd} current=${current_cwd_canonical}" \
