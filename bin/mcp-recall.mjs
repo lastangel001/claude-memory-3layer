@@ -15,13 +15,43 @@
 //   claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
 
 const CLAUDE_HOME = process.env.CLAUDE_HOME || join(homedir(), ".claude");
 const PROTOCOL_VERSION = "2024-11-05";
+
+// How to invoke qmd. On Windows the PATH entry is an npm shim (`qmd` + `qmd.cmd`),
+// not a real exe: Node's execFile can't spawn a bare `qmd` (ENOENT), and running
+// the `.cmd` needs a shell — unsafe with a free-text query. So on Windows we find
+// qmd's JS entry beside the shim and run it with our own node (no shell, argv
+// stays safe). Returns { file, prefix } → execFile(file, [...prefix, ...args]).
+function resolveQmd() {
+  const override = process.env.QMD_BIN;
+  if (override) {
+    // A JS script → run via node; a real binary (.exe/.cmd/…) → run directly.
+    if (existsSync(override) && !/\.(exe|cmd|bat|ps1)$/i.test(override)) {
+      return { file: process.execPath, prefix: [override] };
+    }
+    return { file: override, prefix: [] };
+  }
+  if (process.platform !== "win32") return { file: "qmd", prefix: [] };
+  const dirs = (process.env.PATH || process.env.Path || "").split(delimiter);
+  for (const dir of dirs) {
+    if (!dir) continue;
+    if (existsSync(join(dir, "qmd.cmd")) || existsSync(join(dir, "qmd"))) {
+      const entry = join(dir, "node_modules", "@tobilu", "qmd", "bin", "qmd");
+      if (existsSync(entry)) return { file: process.execPath, prefix: [entry] };
+    }
+    const exe = join(dir, "qmd.exe");
+    if (existsSync(exe)) return { file: exe, prefix: [] };
+  }
+  return { file: "qmd", prefix: [] }; // let it ENOENT with the helpful hint below
+}
+
+const QMD = resolveQmd();
 
 const TOOLS = [
   {
@@ -72,7 +102,7 @@ function searchMemory(args, done) {
   const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(50, args.limit)) : 5;
   const argv = ["search", query, "--md", "-k", String(limit)];
   if (args.collection) argv.push("-c", String(args.collection));
-  execFile("qmd", argv, { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+  execFile(QMD.file, [...QMD.prefix, ...argv], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err) {
       const hint =
         err.code === "ENOENT"

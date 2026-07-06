@@ -25,6 +25,43 @@ cat "$CLAUDE_HOME/settings.json" | node -e "JSON.parse(require('fs').readFileSyn
 
 **Lesson:** never pass an MSYS/Git-Bash path as a string argument to a Windows-native interpreter (node/python from winget). Pipe via stdin, or convert with `cygpath -w`.
 
+## Windows Store `python3` alias: on PATH, `command -v` succeeds, but running it fails
+
+confidence: verified
+
+**Symptom:** `doctor.sh` reports `✗ session-start.sh self-test FAILED (invalid JSON)` and `? settings.json not validated (python3/node/jq not found)` on Win11 — even though the hook output is valid JSON and `node` is installed. Every SessionStart logs `JSON validation failed, using safe fallback` to `hook-trace.log`, so the rich memory-protocol context silently degrades to a minimal fallback each session.
+
+**Cause:** Win11 ships a `python3` **execution-alias stub** at `%LOCALAPPDATA%\Microsoft\WindowsApps\python3` (enabled by default). It satisfies `command -v python3` (the file exists on PATH), but *running* it prints `Python was not found; run without arguments to install from the Microsoft Store…` to stderr and **exits 49**. Every parser chain in the repo selected the interpreter with `command -v python3 >/dev/null` — presence, not function — so it picked the stub, ran it, got empty output + rc 49, and declared valid JSON invalid. `node` (which works) was never reached because it sat in an `elif`. Doctor even mislabeled rc 49 as "no parser found" (the "absent" branch).
+
+**Fix (v6.17.1):** detection must probe that the interpreter actually **executes**, not just that it is on PATH. Shared helper in `bin/lib/validate-json.sh`:
+```bash
+_cmd_runs() {   # 0 only if present AND runs (no-op probe exits 0)
+  case "$1" in
+    python3) command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1 ;;
+    node)    command -v node    >/dev/null 2>&1 && node -e ''     >/dev/null 2>&1 ;;
+    jq)      command -v jq       >/dev/null 2>&1 && jq --version   >/dev/null 2>&1 ;;
+  esac
+}
+_json_parser() { for p in python3 node jq; do _cmd_runs "$p" && { printf '%s' "$p"; return; }; done; return 1; }
+```
+All callers route through these: `validate-json.sh`, `hooks/post-tool-use.sh`, `bin/merge-settings.sh`, `bin/doctor.sh`, `bin/transcript-export.sh`, `bin/uninstall.sh`. `install.sh` inherits the fix via `_validate_json_file`.
+
+**Lesson:** `command -v` proves a name resolves, NOT that it runs. On Windows especially, prefer a trivial exec probe (`tool --version` / `-c ''` / `-e ''`) before selecting an interpreter. User-side alternative: disable the stub in *Settings → Apps → Advanced app settings → App execution aliases*.
+
+## Node `execFile("qmd")` can't spawn an npm-shim CLI on Windows (ENOENT)
+
+confidence: verified
+
+**Symptom:** `bin/mcp-recall.mjs` `search_memory` always returned `qmd not found on PATH — install it…` on Windows, even though `command -v qmd` succeeds and `/recall` (which shells out from bash) works fine.
+
+**Cause:** an npm-global CLI like `qmd` is **not** a real executable on PATH — npm drops a set of shims: `qmd` (POSIX sh, used by Git Bash), `qmd.cmd` (batch, used by cmd/PowerShell), `qmd.ps1`. Node's `child_process.execFile("qmd", …)` does **not** consult `PATHEXT`, so it looks for a file literally named `qmd`, finds only the sh shim (not a Windows executable), and throws `ENOENT`. Two dead ends make this worse: `execFile("qmd.cmd", …)` **throws** on modern Node (`.bat`/`.cmd` without `shell:true` is blocked since CVE-2024-27980), and `execFile(..., {shell:true})` would re-parse a free-text search query through cmd.exe (injection + broken quoting on spaces).
+
+**Fix (v6.17.1):** skip the shim entirely — run the CLI's **JS entry** with the current `node`. `resolveQmd()` scans PATH for the `qmd`/`qmd.cmd` shim and, beside it, `node_modules/@tobilu/qmd/bin/qmd`, then invokes `execFile(process.execPath, [entry, …args])`: no shell, argv stays safe, same node that launched the server. Escape hatches: `QMD_BIN` env override, and a real `qmd.exe` on PATH is used directly. macOS/Linux keep the bare `execFile("qmd", …)`.
+
+**Related:** the `claude mcp add` command must get a **Windows** path to the `.mjs`, not an MSYS `/c/...` one — Windows-native `node` reads `/c/Users/…` as `C:\c\Users\…` → MODULE_NOT_FOUND (same class as the settings.json MSYS-path gotcha above). Register with `node "$(cygpath -w ~/.claude/bin/mcp-recall.mjs)"`.
+
+**Lesson:** to call an npm-installed CLI from Node on Windows, don't spawn the bare command — resolve and run its JS entry with `process.execPath`, or you inherit the shim/PATHEXT/`.cmd`-shell mess.
+
 ## grep -F silently breaks `^`/`$` anchors (codemap.sh def was dead)
 
 **Symptom:** `codemap.sh def <symbol>` returned nothing for any symbol; no error.

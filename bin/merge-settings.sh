@@ -50,7 +50,9 @@ done
 do_merge() {
   local src="$1" tgt="$2"
 
-  if command -v python3 >/dev/null 2>&1; then
+  # _cmd_runs (from validate-json.sh) probes that the interpreter actually runs,
+  # not just that it is on PATH — dodges the Windows Store python3 stub.
+  if _cmd_runs python3; then
     python3 - "$src" "$tgt" <<'PYEOF'
 import sys, json
 
@@ -79,7 +81,7 @@ PYEOF
     return $?
   fi
 
-  if command -v node >/dev/null 2>&1; then
+  if _cmd_runs node; then
     node - "$src" "$tgt" <<'JSEOF'
 const fs = require('fs');
 const src = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -107,7 +109,7 @@ JSEOF
     return $?
   fi
 
-  if command -v jq >/dev/null 2>&1; then
+  if _cmd_runs jq; then
     # jq fallback: preserves existing event arrays, adds missing event keys from src.
     # Won't dedup hook commands within an event already present in target.
     jq --slurpfile src "$src" '

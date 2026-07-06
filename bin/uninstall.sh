@@ -23,6 +23,12 @@ CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 TS=$(date +%Y%m%d-%H%M%S)
 DRY_RUN=0
 ASSUME_YES=0
+
+# _cmd_runs: probes that an interpreter actually RUNS (dodges the Windows Store
+# python3 stub). Sourced now, while the lib still exists — this script deletes it
+# later. Tolerate absence (partial install) so uninstall never hard-fails here.
+# shellcheck source=lib/validate-json.sh
+source "$CLAUDE_HOME/bin/lib/validate-json.sh" 2>/dev/null || _cmd_runs() { command -v "$1" >/dev/null 2>&1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
@@ -75,7 +81,7 @@ if [[ -f "$settings" ]]; then
   else
     cp "$settings" "$settings.bak-$TS"
     _stripped=""
-    if command -v python3 >/dev/null 2>&1; then
+    if _cmd_runs python3; then
       _stripped=$(python3 - "$settings" <<'PYEOF' 2>/dev/null || true
 import sys, json
 ours = ("hooks/session-start.sh", "hooks/pre-compact.sh", "hooks/post-tool-use.sh")
@@ -99,7 +105,7 @@ elif "hooks" in d:
 print(json.dumps(d, indent=2))
 PYEOF
 )
-    elif command -v node >/dev/null 2>&1; then
+    elif _cmd_runs node; then
       _stripped=$(node - "$settings" <<'JSEOF' 2>/dev/null || true
 const fs = require('fs');
 const ours = ["hooks/session-start.sh", "hooks/pre-compact.sh", "hooks/post-tool-use.sh"];
@@ -122,7 +128,7 @@ JSEOF
       printf '%s\n' "$_stripped" > "$settings"
       say "  ~ stripped our hooks (backup: $settings.bak-$TS)"
     else
-      say "  ⚠ could not auto-edit settings.json (no python3/node) — remove the"
+      say "  ⚠ could not auto-edit settings.json (no working python3/node) — remove the"
       say "    hooks block referencing hooks/*.sh manually. Backup: $settings.bak-$TS"
     fi
   fi

@@ -248,8 +248,12 @@ fi
 # remind when not yet registered. User-scope MCP config lives in ~/.claude.json
 # (fixed location, independent of CLAUDE_HOME).
 if ! grep -q '"memory-recall"' "$HOME/.claude.json" 2>/dev/null; then
+  # Windows-native `node` can't resolve an MSYS '/c/...' path arg (reads it as
+  # C:\c\...) — hand it a real Windows path when running under Git Bash/MSYS.
+  _mjs_path="$CLAUDE_HOME/bin/mcp-recall.mjs"
+  if command -v cygpath >/dev/null 2>&1; then _mjs_path=$(cygpath -w "$_mjs_path"); fi
   say "  - Optional: memory search for subagents/headless (one-time, this machine):"
-  say "      claude mcp add --scope user memory-recall -- node $CLAUDE_HOME/bin/mcp-recall.mjs"
+  say "      claude mcp add --scope user memory-recall -- node $_mjs_path"
 fi
 say "  - Optional: install retrieval tools (qmd, ctags, ripgrep) — see INSTALL.md"
 say "  - Start a new Claude Code session — hooks fire automatically"

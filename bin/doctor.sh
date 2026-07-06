@@ -101,7 +101,7 @@ else
   # one event (repeated installs/merges) doubles token cost + execution every
   # session, invisibly. Needs a JSON parser to walk the structure.
   dup_report=""
-  if command -v python3 >/dev/null 2>&1; then
+  if _cmd_runs python3; then
     dup_report=$(python3 - "$sf" <<'PYEOF' 2>/dev/null || true
 import sys, json
 try:
@@ -120,7 +120,7 @@ for event, groups in (d.get("hooks") or {}).items():
             print(f"{event}: {c} (x{n})")
 PYEOF
 )
-  elif command -v node >/dev/null 2>&1; then
+  elif _cmd_runs node; then
     dup_report=$(node - "$sf" <<'JSEOF' 2>/dev/null || true
 const fs = require('fs');
 let d; try { d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')); } catch(e) { process.exit(0); }
@@ -274,14 +274,21 @@ say ""
 # 7. JSON parsers for PostToolUse hook
 # ─────────────────────────────────────────────
 say "JSON parsers (PostToolUse hook — python3 > node > jq > grep):"
-_json_parser=""
-command -v python3 >/dev/null 2>&1 && { ok "python3 on PATH"; _json_parser="${_json_parser:-python3}"; } || true
-command -v node    >/dev/null 2>&1 && { ok "node on PATH";    _json_parser="${_json_parser:-node}";    } || true
-command -v jq      >/dev/null 2>&1 && { ok "jq on PATH";      _json_parser="${_json_parser:-jq}";      } || true
-if [[ -n "$_json_parser" ]]; then
-  ok "PostToolUse will use: $_json_parser (robust JSON parsing)"
+# _cmd_runs (from validate-json.sh) probes that the interpreter actually EXECUTES,
+# not just that it is on PATH — a Windows Store python3 stub passes `command -v`
+# but exits 49 when run, so a presence-only check would report a parser that can't
+# parse. Flag that stub explicitly so the cause is obvious.
+if command -v python3 >/dev/null 2>&1 && ! _cmd_runs python3; then
+  warn "python3 on PATH but does NOT run (Windows Store alias stub?) — skipped; disable it in Settings > Apps > App execution aliases, or install real Python"
+fi
+_cmd_runs python3 && ok "python3 works"
+_cmd_runs node    && ok "node works"
+_cmd_runs jq      && ok "jq works"
+_parser_pick=$(_json_parser || true)
+if [[ -n "$_parser_pick" ]]; then
+  ok "PostToolUse will use: $_parser_pick (robust JSON parsing)"
 else
-  fail "No JSON parser found (python3/node/jq) — grep fallback only; auto-capture may silently lose events on multi-line or escaped-quote JSON. Install any one."
+  fail "No working JSON parser (python3/node/jq) — grep fallback only; auto-capture may silently lose events on multi-line or escaped-quote JSON. Install any one."
 fi
 say ""
 

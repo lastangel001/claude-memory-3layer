@@ -294,7 +294,12 @@ You get:
 claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 ```
 
-Tools exposed: `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` (returns L0 IDENTITY.md). Requires Node 18+ and `qmd` on PATH for search; `get_identity` works without qmd. No daemon — Claude Code spawns it per session over stdio.
+> **Windows (Git Bash):** pass a Windows path, not an MSYS one — Windows-native `node` reads `/c/Users/…` as `C:\c\Users\…` and fails with `MODULE_NOT_FOUND`. Use:
+> ```bash
+> claude mcp add --scope user memory-recall -- node "$(cygpath -w ~/.claude/bin/mcp-recall.mjs)"
+> ```
+
+Tools exposed: `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` (returns L0 IDENTITY.md). Requires Node 18+ and `qmd` on PATH for search; `get_identity` works without qmd. The server resolves `qmd` even when it's an npm shim (Windows) by running its JS entry with the current `node` — set `QMD_BIN` to override the path. No daemon — Claude Code spawns it per session over stdio.
 
 ### 5. Verbatim transcript export (rolling recall layer)
 

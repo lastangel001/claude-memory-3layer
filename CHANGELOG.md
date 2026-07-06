@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.17.1 — 2026-07-06 — Windows JSON-parser + MCP-recall footguns
+
+**Fixed**
+- **`bin/mcp-recall.mjs` `search_memory` always failed on Windows with "qmd not found on PATH".** The npm-installed `qmd` on PATH is a shim (`qmd` + `qmd.cmd`), not a real exe; Node's `execFile("qmd", …)` can't spawn it (no PATHEXT resolution, and a `.cmd` needs a shell — unsafe with a free-text query), so it `ENOENT`ed and the tool misreported qmd as absent even though `command -v qmd` succeeded. New `resolveQmd()` locates qmd's JS entry (`node_modules/@tobilu/qmd/bin/qmd`) beside the shim and runs it with the server's own `node` — no shell, argv stays safe. Honors a `QMD_BIN` override; falls back to a real `qmd.exe` on PATH; unchanged on macOS/Linux. `get_identity` was unaffected.
+- **`python3` execution-alias stub on Win11 silently disabled JSON validation + auto-capture.** Windows 11 ships a `python3` stub at `%LOCALAPPDATA%\Microsoft\WindowsApps\python3` (enabled by default) that satisfies `command -v python3` but, when run, prints "Python was not found…" and exits 49. Every parser chain in the repo selected its interpreter with `command -v <tool> >/dev/null` — presence, not function — so on a stock Win11 box it picked the stub, ran it, got rc 49, and declared valid JSON invalid. Fallout: `doctor.sh` self-test FAILED, `settings.json` reported "not validated", and **every SessionStart discarded its rich memory-protocol context for a minimal safe fallback** (logged as `JSON validation failed, using safe fallback` in `hook-trace.log`) — `node`, which works, was never reached because it sat in an `elif`. This was live on the maintainer's machine, caught by the v6.17.0 dynamic self-test.
+- **Detection now probes that the interpreter actually runs.** New `_cmd_runs` (present *and* executes a no-op) + `_json_parser` (first working parser) helpers in `bin/lib/validate-json.sh`; all call sites routed through them: `validate-json.sh`, `hooks/post-tool-use.sh`, `bin/merge-settings.sh`, `bin/doctor.sh`, `bin/transcript-export.sh`, `bin/uninstall.sh` (`install.sh` inherits it via `_validate_json_file`). `doctor.sh` also now flags an on-PATH-but-non-running `python3` explicitly instead of mislabeling it "no parser found".
+
 ## v6.17.0 — 2026-07-05 — content-health tooling, uninstall, install hygiene
 
 All eighteen M-priority backlog items shipped in one sweep (the sole M/L item —

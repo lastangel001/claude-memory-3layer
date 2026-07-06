@@ -28,12 +28,19 @@ input=$(cat)
 if [[ -z "$input" ]]; then exit 0; fi
 
 # --- Parse JSON (python3 preferred; node fallback; jq fallback; grep last-resort) ---
+# Parser is chosen by _json_parser, which probes that the interpreter actually
+# RUNS — a Windows Store `python3` stub satisfies `command -v` but exits non-zero,
+# so presence-only detection would silently pick a parser that can't parse.
+# shellcheck source=../bin/lib/validate-json.sh
+source "${CLAUDE_HOME}/bin/lib/validate-json.sh"
 
 tool_name=""
 tool_path=""
 tool_cmd=""
 
-if command -v python3 >/dev/null 2>&1; then
+_parser=$(_json_parser || true)
+
+if [[ "$_parser" == "python3" ]]; then
   parsed=$(printf '%s' "$input" | python3 -c '
 import sys, json
 try:
@@ -47,7 +54,7 @@ except Exception:
     sys.stdout.write("\x01\x01")
 ' 2>/dev/null || true)
   IFS=$'\x01' read -r tool_name tool_path tool_cmd <<< "$parsed"
-elif command -v node >/dev/null 2>&1; then
+elif [[ "$_parser" == "node" ]]; then
   parsed=$(printf '%s' "$input" | node -e "
     let s='';
     process.stdin.on('data', d => s += d);
@@ -64,7 +71,7 @@ elif command -v node >/dev/null 2>&1; then
     });
   " 2>/dev/null)
   IFS=$'\x01' read -r tool_name tool_path tool_cmd <<< "$parsed"
-elif command -v jq >/dev/null 2>&1; then
+elif [[ "$_parser" == "jq" ]]; then
   tool_name=$(printf '%s' "$input" | jq -r '.tool_name           // ""' 2>/dev/null || true)
   tool_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null || true)
   tool_cmd=$(printf '%s' "$input"  | jq -r '.tool_input.command   // ""' 2>/dev/null || true)

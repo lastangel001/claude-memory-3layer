@@ -52,14 +52,18 @@ proj_dir="$CLAUDE_HOME/projects/$slug"
 out_dir="$proj_dir/memory/raw/transcripts"
 [[ -d "$proj_dir" ]] || exit 0
 
-# Pick a JSON-capable interpreter. No python3 and no node -> nothing to do.
+# Pick a JSON-capable interpreter. _cmd_runs probes that it actually EXECUTES
+# (not just present on PATH) — the Windows Store python3 stub passes `command -v`
+# but exits non-zero, which would leave `engine=python3` and every export failing.
+# shellcheck source=lib/validate-json.sh
+source "$CLAUDE_HOME/bin/lib/validate-json.sh"
 engine=""
-if command -v python3 >/dev/null 2>&1; then
+if _cmd_runs python3; then
   engine="python3"
-elif command -v node >/dev/null 2>&1; then
+elif _cmd_runs node; then
   engine="node"
 else
-  log "skipped (no python3/node for jsonl parsing)"
+  log "skipped (no working python3/node for jsonl parsing)"
   exit 0
 fi
 

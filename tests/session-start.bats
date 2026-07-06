@@ -21,11 +21,10 @@ run_hook() {
 }
 
 json_is_valid() {
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$1" | python3 -c 'import sys,json; json.load(sys.stdin)'
-  else
-    printf '%s' "$1" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))"
-  fi
+  # Use the repo's own validator so the test picks a WORKING parser (dodges the
+  # Windows Store python3 stub — presence-only checks pick it and it exits 49).
+  source "$REPO_ROOT/bin/lib/validate-json.sh"
+  printf '%s' "$1" | _validate_json_stream
 }
 
 @test "emits valid JSON with protocol reminder (no SESSION.md)" {
