@@ -48,6 +48,18 @@ All callers route through these: `validate-json.sh`, `hooks/post-tool-use.sh`, `
 
 **Lesson:** `command -v` proves a name resolves, NOT that it runs. On Windows especially, prefer a trivial exec probe (`tool --version` / `-c ''` / `-e ''`) before selecting an interpreter. User-side alternative: disable the stub in *Settings → Apps → Advanced app settings → App execution aliases*.
 
+## bats: a teardown ending in `&&` fails every *skipped* test
+
+confidence: verified
+
+**Symptom:** CI red on ubuntu + windows since v6.17.0; `tests/codemap.bats` reported `not ok N … # skip ctags not installed` with `# teardown … failed`. Passed locally.
+
+**Cause:** bats fails any test whose `teardown` returns non-zero. `codemap.bats` skips when ctags/ripgrep are absent (true on GitHub runners), so `FIX` is never set — and its teardown ended with `[[ -n "${FIX:-}" ]] && rm -rf "$FIX"`. With `FIX` unset the `[[ … ]]` is false, so the `&&` compound's exit status is **1**, teardown returns 1, and the *skipped* test flips to `not ok`. Ran green locally only because the dev machine has ctags → tests execute → `FIX` set → teardown ends on a successful `rm`.
+
+**Fix (v6.17.1):** end such teardowns with an explicit `return 0`. Applies to any `teardown`/last-line `&&` guarding optional cleanup.
+
+**Lesson:** a function (or bats hook) whose last statement is `cond && cmd` returns 1 whenever `cond` is false — a silent failure that only surfaces when the guarded branch is skipped. In bats teardown that fails the test; under `set -e` it aborts the script. End with `return 0` (or `|| true`) when the last line is a guarded action.
+
 ## Node `execFile("qmd")` can't spawn an npm-shim CLI on Windows (ENOENT)
 
 confidence: verified

@@ -25,6 +25,7 @@ PY
 teardown() {
   cd /
   [[ -n "${FIX:-}" ]] && rm -rf "$FIX"
+  return 0  # never let a skipped test (FIX unset → && chain exits 1) fail here
 }
 
 @test "codemap def locates a symbol definition" {

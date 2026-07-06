@@ -15,6 +15,7 @@ setup() {
 
 teardown() {
   [[ -n "${TEST_HOME:-}" && -d "$TEST_HOME" ]] && rm -rf "$TEST_HOME"
+  return 0  # skipped test (TEST_HOME unset → && chain exits 1) must not fail here
 }
 
 # Feed each argument as one JSON-RPC line; capture the server's stdout.
