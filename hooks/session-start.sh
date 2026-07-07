@@ -171,11 +171,11 @@ fi
 # Injected into context so the model knows which mode to use when updating SESSION.md.
 compress_note=""
 if [[ "${CLAUDE_SESSION_COMPRESS:-1}" == "0" ]] || [[ -f "$CLAUDE_HOME/.session-compress-disabled" ]]; then
-  compress_note=$'\n\nSESSION COMPRESSION: disabled. Write SESSION.md prose naturally — do NOT apply caveman compression when updating this file. (Re-enable: rm ~/.claude/.session-compress-disabled)'
+  compress_note=$'\n\nSESSION COMPRESSION: disabled. Write SESSION.md and project.md prose naturally — do NOT apply caveman compression when updating these files. (Re-enable: rm ~/.claude/.session-compress-disabled)'
   echo "[$(date -Iseconds)] SessionStart: session compression disabled" \
     >> "$CLAUDE_HOME/debug/hook-trace.log"
 else
-  compress_note=$'\n\nSESSION COMPRESSION: enabled. Write SESSION.md prose in compressed caveman notation — drop articles/filler, fragments OK, code/paths exact. Saves context-window tokens on every reload.'
+  compress_note=$'\n\nSESSION COMPRESSION: enabled. Write agent-only memory prose — SESSION.md and project.md (incl. ## Timeline lines) — in compressed caveman notation: drop articles/filler, fragments OK, code/paths exact. Saves context-window tokens on every reload.'
 fi
 
 # --- SESSION.md size warning ---

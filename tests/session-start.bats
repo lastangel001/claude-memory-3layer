@@ -155,6 +155,7 @@ EOF
   run_hook
   [ "$status" -eq 0 ]
   [[ "$output" == *"SESSION COMPRESSION: enabled"* ]]
+  [[ "$output" == *"agent-only memory prose"* ]]
 }
 
 @test "compression disabled via env var" {

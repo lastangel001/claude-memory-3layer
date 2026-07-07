@@ -66,6 +66,7 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `.githooks/pre-commit` (opt-in) — runs bats + nudges on missing CHANGELOG; documented in dev-workflow.md (v6.17.0)
 - [x] bats coverage: `codemap.bats` (skips w/o ctags/rg), `doctor.bats`, `migrate.bats` (caught a real still-live Pass B regex bug), `gen-index.bats`, `vault-doctor.bats` — 29 → 76 cases (v6.17.0)
 - [x] **Fixed (found by new tests):** `migrate.sh` Pass B regex used `\<!--` — in ERE `\<` is a word-boundary anchor, never matched the literal `<!--`; Pass B was still dead after the v6.16.0 `local` fix. Now literal `<` (v6.17.0)
+- [x] Extend SESSION compression rule to `project.md` (L1-fallback, incl. `## Timeline`) — both hooks' compress wording, PROTOCOL.md rule 4, README, fallback template; `tests/pre-compact.bats` added (first PreCompact coverage), `session-start.bats` asserts unique `agent-only memory prose` phrase; flag names/label prefix unchanged (v6.18.0)
 
 ---
 
@@ -131,6 +132,20 @@ Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (
 
 ---
 
+## Compression & subagents (caveman analysis, 2026-07-07)
+
+Source: architect assessment against the `caveman` repo's usage analysis (`docs/analysis/optimal-usage.md` there): the two paradigms economically sounder than its flagship output-skill are (a) one-time compression of static memory files (~46% input cut, pay once / save every session) and (b) subagent tool-result digests with `path:line — symbol — note` format discipline. Verdict for this repo: write-time SESSION compression already ships (see "Already shipped"), and the format discipline is protocol-native (`# File map` = `path:line — <role>`, PROTOCOL.md rule-4 template). Gap (a) shipped in v6.18.0 (compression rule extended to project.md). Per-turn skill overhead / cache-thrash risks from that analysis don't apply here — our compression rule is injected once per session by hooks, not per turn.
+
+### L/M — Optional cavecrew-style subagent template (memory-researcher)
+
+**What:** Ship an opt-in agent template (e.g. `templates/agents/memory-researcher.md`) for long agentic sessions: subagent does the heavy searching/reading via `mcp-recall` tools (`search_memory`, `get_identity`) and returns only a digest in `path:line — symbol — note` format; raw tool-results stay in the subagent's context, extending the main thread's window.
+
+**Why:** Plumbing already exists — `bin/mcp-recall.mjs` was built precisely because slash commands are unreachable from subagents (README §MCP). Format discipline is already protocol-native (`# File map`). Complementary to (not overlapping) SESSION.md persistence: cavecrew compresses in-flight tool-results before compact; SESSION.md survives the compact.
+
+**Tradeoff:** The upstream ~60% tool-result-reduction figure is explicitly unverified — do not put numbers in README without an A/B. Must stay opt-in (install flag or manual copy) and daemon-free: core philosophy forbids background processes and auto-behavior. Low urgency until users run long multi-agent sessions against big memory stores.
+
+---
+
 ## Hook reliability
 
 ### L/S — BSD `stat` fallback in memstat.sh
@@ -157,7 +172,7 @@ The M-sweep is complete. What remains is one deferred M/L and the L-priority tai
 
 1. **M/L — Lightweight vector search without qmd** *(deferred)* — the only unshipped M item; ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
 2. **L/M — merge-settings.sh fallback dedup** — re-running install can double-register a hook on jq-only systems.
-3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
+3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
 
 ### Legend
 

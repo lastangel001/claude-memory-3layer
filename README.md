@@ -211,7 +211,7 @@ All three hooks run in `set -euo pipefail` strict mode. Any unguarded failure is
 
 ### SESSION.md compression
 
-By default, `SESSION.md` is written in compressed caveman notation (drop articles/filler, fragments OK, code/paths exact). SESSION is read by agents, not humans — terseness reduces context cost on every reload and compact.
+By default, `SESSION.md` is written in compressed caveman notation (drop articles/filler, fragments OK, code/paths exact). SESSION is read by agents, not humans — terseness reduces context cost on every reload and compact. The same notation applies to `project.md` (L1-fallback) including `## Timeline` lines — like SESSION.md, it is agent-only and loads on every session start.
 
 **Toggle:**
 

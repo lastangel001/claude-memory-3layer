@@ -32,9 +32,9 @@ elif [[ -f "$CLAUDE_HOME/.session-compress-disabled" ]]; then
 fi
 
 if [[ "$compress_enabled" == "1" ]]; then
-  compress_rule='\n2. COMPRESSION — write prose sections in compressed caveman notation: drop articles (a/an/the) and filler words, use fragments, keep code/paths/identifiers/numbers byte-exact. SESSION.md is read by agents, not humans — terseness saves context-window tokens on every reload.'
+  compress_rule='\n2. COMPRESSION — write prose sections in compressed caveman notation: drop articles (a/an/the) and filler words, use fragments, keep code/paths/identifiers/numbers byte-exact. Applies to SESSION.md and project.md (incl. ## Timeline lines) — both read by agents, not humans; terseness saves context-window tokens on every reload.'
 else
-  compress_rule='\n2. COMPRESSION — disabled. Write SESSION.md prose naturally; do not apply caveman compression.'
+  compress_rule='\n2. COMPRESSION — disabled. Write SESSION.md and project.md prose naturally; do not apply caveman compression.'
   echo "[$(date -Iseconds)] PreCompact: session compression disabled" >> "$CLAUDE_HOME/debug/hook-trace.log"
 fi
 

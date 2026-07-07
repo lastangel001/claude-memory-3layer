@@ -8,7 +8,8 @@ project: <NAME>
 <!-- L1 layer. Loaded on every session start for this project (cwd-derived slug).
      Lives at ~/.claude/projects/<slug>/memory/project.md
      This file persists across sessions. Promote into it ONLY on explicit "remember/запомни".
-     Highest-leverage section is "Known gotchas" — fill it as you discover non-obvious foot-guns. -->
+     Highest-leverage section is "Known gotchas" — fill it as you discover non-obvious foot-guns.
+     Prose style: compressed caveman notation (same rule and toggle as SESSION.md). -->
 
 <1-2 line elevator pitch — what this project is and why it exists>
 

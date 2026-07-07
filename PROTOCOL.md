@@ -52,7 +52,7 @@ Never put codebase facts in account memory. Never put personal preferences in re
 1. **L0 is sacred** — ≤25 lines hard cap. Never project-specific.
 2. **L1a is thin** — it loads into every session in that repo; bloat taxes all work there.
 3. **L1b is read on demand** — big, typed, lazy; the L1a doc index routes to it.
-4. **L2 is the killer feature — update SESSION.md as you work, not at end.** Default prose: compressed caveman notation (drop articles/filler, fragments OK, code/paths/numbers exact) — toggle off via `~/.claude/.session-compress-disabled` flag file or `CLAUDE_SESSION_COMPRESS=0`; hooks announce the active mode. Write triggers:
+4. **L2 is the killer feature — update SESSION.md as you work, not at end.** Default prose (SESSION.md and `project.md`, incl. `## Timeline` — all agent-only memory): compressed caveman notation (drop articles/filler, fragments OK, code/paths/numbers exact) — toggle off via `~/.claude/.session-compress-disabled` flag file or `CLAUDE_SESSION_COMPRESS=0`; hooks announce the active mode. Write triggers:
    - `# Decisions` — chose X over Y (reason matters later); tried X, failed (reason known); constraint discovered; obvious solution rejected intentionally.
    - `# State` — after each task chunk, on block/unblock, on branch change. Last action + next step.
    - `# File map` — non-obvious source of truth; misleading name; non-obvious cross-file dependency.

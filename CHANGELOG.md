@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.18.0 — 2026-07-07 — compression rule covers project.md
+
+**Changed**
+- **Compression instruction widened from SESSION.md to all agent-only memory.** `project.md` (L1-fallback, incl. `## Timeline` lines) loads on every session start for slug-matched projects — same "read by agents, not humans" economics as SESSION.md, but the caveman-notation rule never covered it. Both hooks now say so: `session-start.sh` compress note (enabled + disabled branches) and `pre-compact.sh` rule 2; PROTOCOL.md rule 4 scopes the default prose accordingly (still within the ≤150-line cap); the fallback template's header comment states the prose style. Flag names (`CLAUDE_SESSION_COMPRESS`, `.session-compress-disabled`) and the `SESSION COMPRESSION:` label prefix are unchanged — existing installs and toggles keep working. Wording-only change: no flags, JSON shape, or exit codes touched.
+
+**Added**
+- **`tests/pre-compact.bats`** — first coverage for the PreCompact hook: enabled/disabled rule wording + valid-JSON output. `session-start.bats` compression tests now also assert the unique phrase `agent-only memory prose` (a bare `project.md` substring would false-pass — the hook's base context already mentions the file).
+
 ## v6.17.1 — 2026-07-06 — Windows JSON-parser + MCP-recall footguns
 
 **Fixed**
