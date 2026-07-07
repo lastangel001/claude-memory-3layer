@@ -1,5 +1,8 @@
 # claude-memory-3layer
 
+[![Release](https://img.shields.io/github/v/release/lastangel001/claude-memory-3layer?label=release&color=blue)](https://github.com/lastangel001/claude-memory-3layer/releases/latest)
+[![CI](https://github.com/lastangel001/claude-memory-3layer/actions/workflows/ci.yml/badge.svg)](https://github.com/lastangel001/claude-memory-3layer/actions/workflows/ci.yml)
+
 > Hand-curated, in-repo memory for Claude Code. Three layers, deliberate placement, selective auto-capture (3 high-signal events only). With hybrid retrieval (qmd) and on-demand symbol map (ctags). 100% local.
 
 A replacement for Claude Code's default memory system, battle-tested on ~15 real projects (PHP/mpcmf, Python, TS, reverse-engineering, multi-machine setups).

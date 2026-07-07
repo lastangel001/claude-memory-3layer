@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.18.1 — 2026-07-07 — release badges + backfilled git tags
+
+**Added**
+- **README release + CI badges** — `shields.io` latest-release badge (links to `/releases/latest`) and the GitHub Actions CI status badge, at the top of README.
+
+**Changed**
+- **Backfilled annotated git tags `v6.3.0`–`v6.17.1`** (20 tags) at their historical version commits, tagger date set to each commit's date. The repo previously tagged only through `v6.2.4`; every CHANGELOG version now has a matching tag on the remote. No code change.
+
 ## v6.18.0 — 2026-07-07 — compression rule covers project.md
 
 **Changed**
