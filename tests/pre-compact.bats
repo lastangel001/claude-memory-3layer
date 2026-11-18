@@ -187,8 +187,68 @@ cwd: $PWD
 ---
 EOF
   run_hook
-  grep -q '"hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=3 trigger=auto"' \
+  grep -q '"hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=3 trigger=auto sid=s"' \
     "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "snapshot records which session it belongs to; the journal gets a short id" {
+  make_transcript
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: $PWD
+---
+EOF
+  printf '{"session_id":"0123abcd-4567-89ef-0000-111122223333","transcript_path":"%s","cwd":"%s","hook_event_name":"PreCompact","trigger":"auto"}' \
+    "$TRANSCRIPT" "$PWD" > "$WORK_DIR/.in.json"
+  run bash -c "bash '$REPO_ROOT/hooks/pre-compact.sh' < '$WORK_DIR/.in.json'"
+  [ "$status" -eq 0 ]
+  snap="$TEST_CLAUDE_HOME/projects/$slug/memory/compact-snapshot.md"
+  grep -q '^session: 0123abcd-4567-89ef-0000-111122223333$' "$snap"
+  grep -q '^generated: ' "$snap"
+  grep -q 'trigger=auto sid=0123abcd"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "idle compaction end to end: PreCompact's snapshot is handed back on the next resume, once" {
+  make_transcript
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: $PWD
+---
+# Goal
+IDLE-GOAL-MARKER
+EOF
+  sid="9f8e7d6c-idle-session"
+  # 1. The session is compacted while idle: PreCompact fires, nothing else.
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"PreCompact","trigger":"auto"}' \
+    "$sid" "$TRANSCRIPT" "$PWD" > "$WORK_DIR/.pre.json"
+  run bash -c "bash '$REPO_ROOT/hooks/pre-compact.sh' < '$WORK_DIR/.pre.json'"
+  [ "$status" -eq 0 ]
+  # 2. The user comes back: SessionStart says `resume`, never `compact`.
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"SessionStart","source":"resume"}' \
+    "$sid" "$TRANSCRIPT" "$PWD" > "$WORK_DIR/.start.json"
+  run bash -c "bash '$REPO_ROOT/hooks/session-start.sh' < '$WORK_DIR/.start.json'"
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"<memory-record"* ]]
+  [[ "$output" == *"IDLE-GOAL-MARKER"* ]]
+  [[ "$output" == *"first question about the retry window"* ]]
+  # 3. Resumed again with no new compaction: nothing is repeated.
+  run bash -c "bash '$REPO_ROOT/hooks/session-start.sh' < '$WORK_DIR/.start.json'"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"<memory-record"* ]]
+  # 4. The journal carries the pair the doctor counts.
+  grep -q '"hook":"PreCompact".*trigger=auto sid=9f8e7d6c"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+  grep -q '"hook":"SessionStart".*source=resume inject=session snapshot=yes sid=9f8e7d6c"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "a snapshot script run without a session id says so instead of leaving a blank" {
+  make_transcript
+  mkdir -p "$WORK_DIR/proj/memory"
+  run bash "$REPO_ROOT/bin/compact-snapshot.sh" "$WORK_DIR/proj" "$TRANSCRIPT" manual "$PWD"
+  [ "$status" -eq 0 ]
+  grep -q '^session: unknown$' "$WORK_DIR/proj/memory/compact-snapshot.md"
 }
 
 @test "missing snapshot script does not break the hook" {

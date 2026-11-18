@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bin/compact-snapshot.sh — deterministic pre-compaction checkpoint.
 #
-#   compact-snapshot.sh <project_dir> <transcript_path> [trigger] [cwd]
+#   compact-snapshot.sh <project_dir> <transcript_path> [trigger] [cwd] [session_id]
 #     -> <project_dir>/memory/compact-snapshot.md   (overwritten every time)
 #
 # Why: when compaction starts, the model gets no turn to write anything — the
@@ -25,6 +25,9 @@ project_dir="${1:-}"
 transcript="${2:-}"
 trigger="${3:-unknown}"
 cwd="${4:-$PWD}"
+# Whose snapshot this is: several sessions can share one project directory, and
+# SessionStart must not hand session A the last turns of session B.
+session_id="${5:-}"
 MAX_TURNS="${COMPACT_SNAPSHOT_TURNS:-5}"
 MAX_CHARS="${COMPACT_SNAPSHOT_TURN_CHARS:-700}"
 
@@ -125,8 +128,8 @@ if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 {
-  printf -- '---\ntags: [memory/l2, compact-snapshot]\ngenerated: %s\ntrigger: %s\n---\n\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$trigger"
+  printf -- '---\ntags: [memory/l2, compact-snapshot]\ngenerated: %s\ntrigger: %s\nsession: %s\n---\n\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$trigger" "${session_id:-unknown}"
   printf '<!-- Machine-written by the PreCompact hook; replaced at the next compaction. Do not keep notes here. -->\n\n'
   printf '# Git position at compaction\n%s\n\n' "$git_block"
   printf '# Last user turns (verbatim, oldest first)\n'

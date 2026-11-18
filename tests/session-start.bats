@@ -542,8 +542,116 @@ EOF
 @test "compact: the injection is journaled" {
   small_session
   run_hook_source compact
-  grep -q '"hook":"SessionStart","outcome":"ok","note":"slug=formula source=compact inject=session"' \
+  grep -q '"hook":"SessionStart","outcome":"ok","note":"slug=formula source=compact inject=session sid=s"' \
     "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+# --- hand-back on resume after an idle compaction (v6.24.0) ---
+# Claude Code compacts idle sessions in the background: PreCompact fires, no
+# SessionStart `compact` follows. The next event such a session gets is `resume`.
+
+snapshot_for() {  # $1 = session id the snapshot belongs to, $2 = generated stamp
+  cat > "$(dirname "$SESSION_FILE")/compact-snapshot.md" <<EOF
+---
+tags: [memory/l2, compact-snapshot]
+generated: $2
+trigger: auto
+session: $1
+---
+
+# Git position at compaction
+- branch: feature/idle
+
+# Last user turns (verbatim, oldest first)
+1. IDLE-TURN-MARKER keep the 250 ms backoff
+EOF
+}
+
+@test "resume: a compaction of this session that was never handed back is picked up" {
+  small_session
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source resume
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"<memory-record"* ]]
+  [[ "$output" == *"Handed back by the SessionStart hook on resume"* ]]
+  [[ "$output" == *"ship the retry window fix"* ]]
+  [[ "$output" == *"IDLE-TURN-MARKER"* ]]
+  grep -q 'source=resume inject=session snapshot=yes sid=s"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "resume: the record is handed back once, not on every resume" {
+  small_session
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source resume
+  [[ "$output" == *"<memory-record"* ]]
+  [ "$(cat "$(dirname "$SESSION_FILE")/.compact-handed-back")" = "s 2026-01-01T10:00:00Z" ]
+  run_hook_source resume
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" != *"<memory-record"* ]]
+  [[ "$output" != *"IDLE-TURN-MARKER"* ]]
+}
+
+@test "resume: a later compaction of the same session is handed back again" {
+  small_session
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source resume
+  snapshot_for s 2026-01-02T08:30:00Z
+  run_hook_source resume
+  [[ "$output" == *"<memory-record"* ]]
+  [ "$(cat "$(dirname "$SESSION_FILE")/.compact-handed-back")" = "s 2026-01-02T08:30:00Z" ]
+}
+
+@test "resume: after a compact hand-back the same record is not repeated" {
+  small_session
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source compact
+  [[ "$output" == *"<memory-record"* ]]
+  run_hook_source resume
+  [[ "$output" != *"<memory-record"* ]]
+}
+
+@test "resume: another session's compaction is not handed to this one" {
+  small_session
+  snapshot_for some-other-session 2026-01-01T10:00:00Z
+  run_hook_source resume
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"<memory-record"* ]]
+  [[ "$output" != *"IDLE-TURN-MARKER"* ]]
+  [ ! -f "$(dirname "$SESSION_FILE")/.compact-handed-back" ]
+}
+
+@test "startup: a matching snapshot is not handed back (new session, nothing to restore)" {
+  small_session
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source startup
+  [[ "$output" != *"<memory-record"* ]]
+}
+
+@test "compact: the last turns of another session are left out of the record" {
+  small_session
+  snapshot_for some-other-session 2026-01-01T10:00:00Z
+  run_hook_source compact
+  json_is_valid "$output"
+  [[ "$output" == *"<memory-record"* ]]
+  [[ "$output" == *"ship the retry window fix"* ]]
+  [[ "$output" != *"IDLE-TURN-MARKER"* ]]
+}
+
+@test "resume: a cwd-mismatched SESSION.md is not handed back" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: C:/somewhere/else
+---
+# Goal
+FOREIGN-GOAL-MARKER
+EOF
+  snapshot_for s 2026-01-01T10:00:00Z
+  run_hook_source resume
+  [[ "$output" != *"FOREIGN-GOAL-MARKER"* ]]
+  [[ "$output" != *"<memory-record"* ]]
 }
 
 # --- background refresh block (dead until v6.21.0) ---

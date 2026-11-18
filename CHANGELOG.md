@@ -1,5 +1,21 @@
 # Changelog
 
+## v6.24.0 — 2026-11-18 — idle compactions get their state back
+
+Claude Code compacts a session nobody is using in the background. PreCompact fires — the snapshot is written — but no SessionStart `compact` event follows, so the `<memory-record>` hand-back added in v6.20.0 never ran for such a session; it was left with the standing "read SESSION.md first" line. This release closes that gap, which was the last open item about compaction.
+
+**Added**
+- **Hand-back on resume.** `compact-snapshot.md` now records `session: <id>` next to `generated:`. On `source: resume`, `session-start.sh` inlines SESSION.md + the snapshot in the `<memory-record>` frame when the snapshot belongs to the resuming session and that compaction has not been handed back yet. A stamp, `memory/.compact-handed-back`, makes it once per compaction: resuming the same session again adds nothing, and a session that already received its record through `source: compact` is not given it twice. The frame on this path says the context *may* have been compacted — the hook cannot see whether the background result was applied.
+- **`doctor.sh` → Compactions (last 7 days).** Both hooks now journal a short session id (`sid=`). The doctor pairs each `PreCompact` with the hand-back that followed and prints how many were handed back at once, picked up on resume, or are still waiting for their session to be opened.
+
+**Fixed**
+- **A snapshot from another session is no longer inlined.** One project directory can serve several sessions and holds a single snapshot file; after a compaction, a session could be shown another session's last user turns as its own. The snapshot part is now included only when it names the current session (or names none — snapshots written before this release).
+
+**Changed**
+- `bin/compact-snapshot.sh` takes the session id as an optional fifth argument; without it the snapshot says `session: unknown`.
+- gotchas.md: a third live observation — an auto-compaction of a session *in use* runs the full chain, like a manual one — and the idle-path entry is rewritten around the new behaviour, with the superseded statement kept under History.
+- Tests: 209 → 222.
+
 ## v6.23.2 — 2026-11-18 — docs: the manual compaction path, observed end to end
 
 No code change.

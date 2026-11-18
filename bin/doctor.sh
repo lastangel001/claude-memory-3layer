@@ -332,6 +332,41 @@ fi
 say ""
 
 # ─────────────────────────────────────────────
+# 4c'. Compactions and their hand-backs (last 7 days)
+# ─────────────────────────────────────────────
+# A compaction starts with PreCompact (snapshot written). State is handed back
+# by SessionStart: at once (`source=compact`) after a manual or in-session
+# compaction, or on the next `resume` when Claude Code compacted the session
+# while it was idle. Both hooks journal the session id (sid=…); pairing them
+# turns "does the hand-back happen?" from a guess into a count.
+say "Compactions (last 7 days):"
+if [[ ! -f "$_diag_file" ]]; then
+  ok "No compactions recorded"
+else
+  _pair=$(awk -F'"' -v cut="${_cut:-}" '
+    function sid_of(note,   m) { if (match(note, /sid=[A-Za-z0-9_-]+/)) return substr(note, RSTART + 4, RLENGTH - 4); return "" }
+    $4 >= cut && $8 == "PreCompact" { s = sid_of($16); if (s != "") { started++; pend[s]++ } }
+    $4 >= cut && $8 == "SessionStart" && $16 ~ /inject=/ {
+      s = sid_of($16)
+      # One hand-back covers every compaction of that session still pending:
+      # the state file is current and the snapshot is the latest one.
+      if (s != "" && pend[s] > 0) { if ($16 ~ /source=compact/) atonce += pend[s]; else onresume += pend[s]; pend[s] = 0 }
+    }
+    END { for (s in pend) waiting += pend[s]; printf "%d %d %d %d", started, atonce, onresume, waiting }
+  ' "$_diag_file" 2>/dev/null)
+  read -r _c_started _c_atonce _c_resume _c_waiting <<< "${_pair:-0 0 0 0}"
+  if [[ "${_c_started:-0}" -eq 0 ]]; then
+    ok "No compactions recorded"
+  else
+    ok "${_c_started} started — ${_c_atonce:-0} handed back at once (source=compact), ${_c_resume:-0} picked up on resume, ${_c_waiting:-0} not handed back yet"
+    if [[ "${_c_waiting:-0}" -gt 0 ]]; then
+      ok "  (not yet = compacted while idle and not used since; such a session gets its state on its next resume, and the standing 'read SESSION.md first' instruction either way)"
+    fi
+  fi
+fi
+say ""
+
+# ─────────────────────────────────────────────
 # 4d. Index refresh completion
 # ─────────────────────────────────────────────
 # SessionStart writes .qmd-last-refresh when it KICKS a background refresh and

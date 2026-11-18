@@ -95,22 +95,15 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `memory-researcher` subagent template — opt-in, read-only, runs `recall.sh`, returns a digest (v6.23.0)
 - [x] Fixed: `grep -i -F` aborts under Git for Windows (grep 3.0) — plain-grep recall path was dead on Git Bash (v6.23.0)
 - [x] Observed one live manual compaction end to end — snapshot, summary instructions honoured, `source=compact` re-injection after the summary (v6.23.2, docs)
+- [x] Hand-back after an *idle* compaction — the snapshot names its session; SessionStart hands the record back on that session's next `resume`, once per compaction; `doctor.sh` counts how every compaction ended (v6.24.0)
 
 ---
 
 ## Backlog
 
-After the 2026-11 review (hooks vs current Claude Code, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight), a survey of 2026 agent-memory work) and releases v6.19.0–v6.23.0, nothing here is waiting for "someone to get to it". Each remaining idea is either open with the thing that blocks it, or parked / rejected with the reason.
+After the 2026-11 review (hooks vs current Claude Code, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight), a survey of 2026 agent-memory work) and releases v6.19.0–v6.24.0, nothing here is waiting for "someone to get to it". Each remaining idea is either open with the thing that blocks it, or parked / rejected with the reason.
 
 ### Open — blocked on something outside the code
-
-#### L/S — Re-injection after an *idle* auto-compaction
-
-**Known (2026-11-18, v6.23.x, details in gotchas.md):** a manual `/compact` runs the whole chain — snapshot, summary ending with the working-state line, SessionStart `source: compact`, `<memory-record>` after the summary. An idle auto-compaction runs only the first step: PreCompact fires and the snapshot is written, but no SessionStart `source: compact` follows; the session's next SessionStart is `resume`.
-
-**What:** on `resume`, inline SESSION.md + the snapshot too when `compact-snapshot.md` is newer than the last time this session was given a `<memory-record>` (keep a per-session stamp next to the snapshot).
-
-**Blocked on:** knowing whether the idle compaction's result is actually applied to the session at that point — the transcript shows nothing until the session is used again. Needs someone to resume a session after an idle compaction and look at what the model was given. Until then the plain fallback ("read SESSION.md FIRST") covers it.
 
 #### L/S — Watch the background refresh across platforms
 
@@ -166,7 +159,7 @@ Requires a server, a database and a model call on every write, and promotes with
 
 ### Where things stand (2026-11)
 
-All H and M items are shipped (v6.16.0–v6.23.0). The manual compaction path has been observed working end to end (v6.23.2). The backlog above holds three *open* items that need a human or more platforms, four *parked* ones, and four *rejected* with reasons. New ideas go under **Open** with what blocks them — or straight to a release.
+All H and M items are shipped (v6.16.0–v6.24.0). The compaction path has been observed working end to end for manual and in-use sessions (v6.23.2), and idle sessions are handed their state on resume (v6.24.0). The backlog above holds two *open* items that need a human or more platforms, four *parked* ones, and four *rejected* with reasons. New ideas go under **Open** with what blocks them — or straight to a release.
 
 ### Legend
 
