@@ -178,3 +178,75 @@ EOF
   ! grep -q '^update$' "$QMD_STUB_LOG"
   rm -rf "$STUB_DIR"
 }
+
+# --- --timeline ---
+
+seed_timelines() {
+  printf '# Project alpha\n\n## Timeline\n\n- 2026-03-10: retry window fix — shipped v1.2\n- 2026-01-05: initial import — done\n' \
+    > "$TEST_CLAUDE_HOME/projects/C--dev-alpha/memory/project.md"
+  printf '# Project beta\n\n## Timeline\n- 2026-02-20: queue rewrite — merged\nnot a dated line\n' \
+    > "$TEST_CLAUDE_HOME/projects/C--dev-beta/memory/project.md"
+}
+
+@test "--timeline lists dated lines of every project, newest first" {
+  seed_timelines
+  recall --timeline
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"## Timeline (all projects)"* ]]
+  first=$(printf '%s\n' "$output" | grep -n '2026-03-10' | cut -d: -f1)
+  second=$(printf '%s\n' "$output" | grep -n '2026-02-20' | cut -d: -f1)
+  third=$(printf '%s\n' "$output" | grep -n '2026-01-05' | cut -d: -f1)
+  [ "$first" -lt "$second" ] && [ "$second" -lt "$third" ]
+  [[ "$output" == *"C--dev-beta"*"queue rewrite"* ]]
+  [[ "$output" != *"not a dated line"* ]]
+}
+
+@test "--timeline filters by query words and honours -n" {
+  seed_timelines
+  recall --timeline queue
+  [[ "$output" == *"queue rewrite"* ]]
+  [[ "$output" != *"retry window fix"* ]]
+  recall --timeline -n 1
+  [ "$(printf '%s\n' "$output" | grep -c '^- \*\*')" -eq 1 ]
+  [[ "$output" == *"2026-03-10"* ]]
+}
+
+@test "--timeline with nothing to show says so" {
+  recall --timeline zzz-nothing
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no dated timeline lines"* || "$output" == *"no project.md files"* ]]
+}
+
+# --- plain-grep path (no ripgrep on PATH) ---
+
+# A PATH that still has the basic tools but no `rg`.
+path_without_rg() {
+  local d out=""
+  IFS=':' read -r -a _dirs <<< "$PATH"
+  for d in "${_dirs[@]}"; do
+    [[ -x "$d/rg" || -x "$d/rg.exe" ]] && continue
+    out="${out:+$out:}$d"
+  done
+  printf '%s' "$out"
+}
+
+@test "grep path: works when ripgrep is absent (and never uses grep -i -F)" {
+  ! grep -nE 'grep [^|;]*-i [^|;]*-F|grep [^|;]*-F [^|;]*-i' "$REPO_ROOT/bin/recall.sh"
+  printf '# Notes\nthe a.b*c token appears here\nAnd Retry Backoff too\n' > "$TEST_CLAUDE_HOME/projects/C--dev-beta/memory/SESSION.md"
+  run env PATH="$(path_without_rg)" MEMORY_QMD_CMD=/nonexistent/qmd bash "$REPO_ROOT/bin/recall.sh" retry backoff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"engine: grep, literal match"* ]]
+  [[ "$output" == *"C--dev-alpha/memory/SESSION.md"* ]]
+  # case-insensitive, and regex metacharacters in a term are literal
+  run env PATH="$(path_without_rg)" MEMORY_QMD_CMD=/nonexistent/qmd bash "$REPO_ROOT/bin/recall.sh" "a.b*c"
+  [[ "$output" == *"C--dev-beta/memory/SESSION.md"* ]]
+  [[ "$output" == *"a.b*c token"* ]]
+}
+
+@test "--no-memory searches repo docs only" {
+  recall --engine rg --no-memory retry
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"## Memory"* ]]
+  [[ "$output" != *"C--dev-alpha"* ]]
+  [[ "$output" == *"## Repo docs"* ]]
+}

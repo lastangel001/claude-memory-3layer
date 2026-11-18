@@ -8,7 +8,13 @@
 #     --hybrid        qmd hybrid search (BM25 + vectors + rerank); needs `qmd embed`
 #     -c NAME         restrict qmd to one collection (claude-l0 | claude-projects)
 #     --no-repo       skip the current repo's .claude-docs / CLAUDE.md
+#     --no-memory     skip account memory — repo docs only (what a fresh clone has)
 #     --engine rg     force the ripgrep path even when qmd is installed
+#     --timeline      instead of searching: the dated `## Timeline` lines of every
+#                     project.md, newest first (default 20; -n to change). Query
+#                     words are optional and filter the lines (all must match).
+#                     With --here: this project only. Answers "what was I doing
+#                     on X last week?" — recency, not relevance; needs no qmd.
 #
 # Sections printed (markdown):
 #   ## Memory      — account memory: ~/.claude/memory + ~/.claude/projects/*/memory
@@ -41,15 +47,22 @@ source "$_here/lib/slug.sh"
 [[ -f "$_here/lib/diag.sh" ]] && source "$_here/lib/diag.sh"
 export QMD_LLAMA_GPU="${QMD_LLAMA_GPU:-none}"   # Vulkan default crashes on some Windows GPUs
 
-limit=5; here=0; hybrid=0; collection=""; with_repo=1; engine="auto"
+# Escape a literal for use as a basic regular expression. Needed because
+# `grep -i -F` cannot be used: GNU grep 3.0 (the one Git for Windows ships)
+# aborts on that combination. `grep -i -e <escaped>` is the portable spelling.
+_bre() { printf '%s' "$1" | sed 's/[][\\.*^$]/\\&/g'; }
+
+limit=5; here=0; hybrid=0; collection=""; with_repo=1; with_memory=1; engine="auto"; timeline=0; limit_set=0
 words=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -n|-k)      limit="${2:-5}"; shift 2 ;;
+    -n|-k)      limit="${2:-5}"; limit_set=1; shift 2 ;;
+    --timeline) timeline=1; shift ;;
     --here)     here=1; shift ;;
     --hybrid)   hybrid=1; shift ;;
     -c)         collection="${2:-}"; shift 2 ;;
     --no-repo)  with_repo=0; shift ;;
+    --no-memory) with_memory=0; shift ;;
     --engine)   engine="${2:-auto}"; shift 2 ;;
     -h|--help)  grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --)         shift; while [[ $# -gt 0 ]]; do words+=("$1"); shift; done ;;
@@ -59,6 +72,41 @@ done
 [[ "$limit" =~ ^[0-9]+$ && "$limit" -gt 0 ]] || limit=5
 
 query="${words[*]:-}"
+
+# --- Timeline mode ------------------------------------------------------------
+# project.md keeps one dated line per finished task (`- YYYY-MM-DD: task — outcome`).
+# Across projects, sorted by date, that is a work log nobody had to write twice.
+if [[ $timeline -eq 1 ]]; then
+  [[ $limit_set -eq 0 ]] && limit=20
+  _resolve_project
+  tl_files=()
+  # shellcheck disable=SC2154  # project_dir set by sourced _resolve_project
+  if [[ $here -eq 1 ]]; then
+    [[ -f "$project_dir/memory/project.md" ]] && tl_files+=("$project_dir/memory/project.md")
+  else
+    shopt -s nullglob
+    tl_files=("$CLAUDE_HOME"/projects/*/memory/project.md)
+    shopt -u nullglob
+  fi
+  printf '## Timeline (%s)\n\n' "$([[ $here -eq 1 ]] && echo 'this project' || echo 'all projects')"
+  if [[ ${#tl_files[@]} -eq 0 ]]; then echo "(no project.md files)"; exit 0; fi
+  read -r -a _tl_terms <<< "$query"
+  _tl=$(
+    for _f in "${tl_files[@]}"; do
+      _proj="${_f%/memory/project.md}"; _proj="${_proj##*/}"
+      # dated bullet lines only: "- 2026-01-31: …"
+      grep -E '^[[:space:]]*-[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}' "$_f" 2>/dev/null | tr -d '\r' \
+        | sed -E "s|^[[:space:]]*-[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})[:[:space:]]*|\\1\t${_proj}\t|"
+    done | sort -r
+  )
+  for _t in ${_tl_terms[@]+"${_tl_terms[@]}"}; do
+    _tl=$(printf '%s\n' "$_tl" | grep -i -e "$(_bre "$_t")" || true)
+  done
+  if [[ -z "$_tl" ]]; then echo "(no dated timeline lines${query:+ matching: $query})"; exit 0; fi
+  printf '%s\n' "$_tl" | head -n "$limit" | awk -F'\t' '{ line = $3; if (length(line) > 300) line = substr(line, 1, 300) " [...]"; printf "- **%s** `%s` — %s\n", $1, $2, line }'
+  exit 0
+fi
+
 if [[ -z "${query// /}" ]]; then
   echo "recall: empty query. Usage: recall.sh [-n N] [--here] [--hybrid] <query words...>" >&2
   exit 2
@@ -88,7 +136,7 @@ _count_term() {  # $1 = term, rest = paths   ->  "path:count" lines
   if [[ $have_rg -eq 1 ]]; then
     rg -c -i -F --no-messages -g '*.md' -- "$t" "$@" 2>/dev/null
   else
-    grep -r -i -F -c --include='*.md' -- "$t" "$@" 2>/dev/null | grep -v ':0$'
+    grep -r -i -c --include='*.md' -e "$(_bre "$t")" -- "$@" 2>/dev/null | grep -v ':0$'
   fi
 }
 _rank() {  # $@ = paths
@@ -107,8 +155,8 @@ _rank() {  # $@ = paths
   ' | sort -t "$(printf '\t')" -k1,1nr -k2,2
 }
 _show_hits() {  # stdin: "score<TAB>path" lines; $1 = max files
-  local max="$1" n=0 path args=() t
-  for t in "${terms[@]}"; do args+=(-e "$t"); done
+  local max="$1" n=0 path args=() gargs=() t
+  for t in "${terms[@]}"; do args+=(-e "$t"); gargs+=(-e "$(_bre "$t")"); done
   # First column is the score — only needed for the sort upstream.
   while IFS="$(printf '\t')" read -r _ path; do
     [[ -z "$path" ]] && continue
@@ -117,7 +165,7 @@ _show_hits() {  # stdin: "score<TAB>path" lines; $1 = max files
     if [[ $have_rg -eq 1 ]]; then
       rg -n -i -F -m 3 --no-messages "${args[@]}" -- "$path" 2>/dev/null
     else
-      grep -n -i -F -m 3 "${args[@]}" -- "$path" 2>/dev/null
+      grep -n -i -m 3 "${gargs[@]}" -- "$path" 2>/dev/null
     fi | cut -c1-240 | sed 's/^/    /'
     printf '\n'
   done
@@ -204,10 +252,13 @@ _rg_memory_section() {
   if [[ $have_rg -eq 1 ]]; then echo "_(engine: ripgrep, literal match)_"; else echo "_(engine: grep, literal match)_"; fi
 }
 
-printf '## Memory (%s)\n\n' "$mem_scope_label"
-if [[ $have_qmd -eq 1 && $here -eq 0 ]]; then
+if [[ $with_memory -eq 0 ]]; then
+  :
+elif [[ $have_qmd -eq 1 && $here -eq 0 ]]; then
+  printf '## Memory (%s)\n\n' "$mem_scope_label"
   _qmd_section || _rg_memory_section
 else
+  printf '## Memory (%s)\n\n' "$mem_scope_label"
   # --here goes through ripgrep on purpose: the scope is one small directory,
   # and qmd has no path filter.
   _rg_memory_section
@@ -242,7 +293,8 @@ if [[ $with_repo -eq 1 ]]; then
 fi
 
 # --- Misses: what memory was asked for and did not have ----------------------
-if [[ $total_hits -eq 0 ]]; then
+# RECALL_NO_MISS_LOG=1: automated callers (memory-eval.sh) are not a person asking.
+if [[ $total_hits -eq 0 && "${RECALL_NO_MISS_LOG:-0}" != "1" ]]; then
   mkdir -p "$CLAUDE_HOME/logs" 2>/dev/null || true
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$mem_scope_label" "$query" \
     >> "$CLAUDE_HOME/logs/recall-misses.log" 2>/dev/null || true

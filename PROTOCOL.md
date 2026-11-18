@@ -99,7 +99,7 @@ tags: [memory/l2, session]
 
 Context window = RAM (expensive). Files = disk (cheap). Read disk on demand, don't preload.
 
-- **`/recall <query>`** — search account memory **and** this repo's `.claude-docs` (qmd BM25, ripgrep when qmd is absent; `--hybrid` adds vectors, `--here` = this project only). First stop for "did we already see this?" / past decisions / gotchas.
+- **`/recall <query>`** — search account memory **and** this repo's `.claude-docs` (qmd BM25, ripgrep when qmd is absent; `--hybrid` adds vectors, `--here` = this project only, `--timeline` = dated work log across projects). First stop for "did we already see this?" / past decisions / gotchas.
 - **`/codemap def|callers|callees|outline <symbol>`** — symbol map via ctags+ripgrep. "Where defined / who calls / structure".
 - **`/memstat [--watch|--refresh]`** — memory subsystem status (processes, index progress, health); `--refresh` rebuilds the index + vectors (manual only).
 

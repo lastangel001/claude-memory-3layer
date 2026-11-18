@@ -308,3 +308,16 @@ confidence: verified
 confidence: verified
 
 `src: path#symbol @ <sha>` is checked by `vault-doctor.sh` with `git cat-file` and `git rev-list <sha>..HEAD -- path`. This repo squash-merges: a feature-branch commit is gone from `main`'s history after the merge, and once the branch is deleted the sha may not resolve at all — the doctor then reports "cited commit … is not in this repository". Cite the merge commit on the main branch (or cite after merging). Cite a symbol, not a line number: line numbers move with every edit, a function name moves only when the fact probably changed too.
+
+## `grep -i -F` aborts under Git for Windows (grep 3.0)
+
+confidence: verified
+src: bin/recall.sh#_bre @ 2f32af5
+
+**Symptom:** a case-insensitive fixed-string grep — `grep -i -F -- "$term"` — returned nothing and the pipeline carried on as if there were no matches. Run by hand: `Aborted`, exit status 134. Any input, ASCII included; `LC_ALL=C` does not help. `grep -F` alone and `grep -i` alone both work.
+
+**Cause:** a crash in GNU grep 3.0, the version Git for Windows ships, on the combination of `-i` and `-F`. Inside `$( … || true )` or `2>/dev/null` the abort is indistinguishable from "no match" — the ripgrep path hid it, because the plain-grep path only runs when `rg` is missing.
+
+**Fix (v6.23.0):** escape the literal and use a regular expression — `grep -i -e "$(_bre "$term")"`, where `_bre` backslash-escapes `[ ] \ . * ^ $`. `tests/recall.bats` runs the grep path with ripgrep removed from PATH and asserts the script contains no `-i` + `-F` grep.
+
+**Lesson:** never combine `grep -i` with `-F` in a script that must run on Git Bash. And a fallback path needs its own test with the preferred tool taken away — otherwise it is only ever executed on the machines least able to report a failure.

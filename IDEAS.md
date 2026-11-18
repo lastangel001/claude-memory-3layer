@@ -89,131 +89,81 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Instruction diet — `vault-doctor.sh` flags an over-long `CLAUDE.md` and README prose copied into it (v6.22.0)
 - [x] `# Recent turns` trimmed to ~3 first-sentence entries — verbatim text lives in the PreCompact snapshot and transcript export (v6.22.0)
 - [x] Verified: qmd indexes frontmatter as text (slash-joined values are not single terms) — no change needed (v6.22.0)
+- [x] Closed-book retrieval eval — `bin/memory-eval.sh`, `/memory-eval`, `.claude-docs/eval-questions.md`; this repo's own questions run in CI (v6.23.0)
+- [x] `/recall --timeline` — dated `## Timeline` lines across projects, newest first (v6.23.0)
+- [x] `mcp-recall.mjs` without qmd — built-in scan + current repo docs; no exit while a call is pending (v6.23.0)
+- [x] `memory-researcher` subagent template — opt-in, read-only, runs `recall.sh`, returns a digest (v6.23.0)
+- [x] Fixed: `grep -i -F` aborts under Git for Windows (grep 3.0) — plain-grep recall path was dead on Git Bash (v6.23.0)
 
 ---
 
 ## Backlog
 
-## Review 2026-11 (hooks vs current Claude Code, hindsight, memory-systems survey)
+After the 2026-11 review (hooks vs current Claude Code, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight), a survey of 2026 agent-memory work) and releases v6.19.0–v6.23.0, nothing here is waiting for "someone to get to it". Each remaining idea is either open with the thing that blocks it, or parked / rejected with the reason.
 
-Source: a review of this repo against the current Claude Code hooks/memory docs, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight) (server-based agent memory — opposite architecture, a few portable ideas) and a survey of 2026 agent-memory work. The reliability slice shipped in v6.19.0; what follows is the rest, in suggested order.
+### Open — blocked on something outside the code
 
-### L/S — PostCompact: keep the compact summary
+#### L/S — Observe one live compaction
 
-**What:** a PostCompact hook whose input carries `compact_summary`; save it next to SESSION.md (replaced each time).
+**What:** in a real session, run `/compact` once and check: `memory/compact-snapshot.md` holds the right turns; the summary ends with the working-state line; the `<memory-record>` block arrives after the summary; `doctor.sh` → *Hook outcomes* shows `source=compact inject=session`.
 
-**Why not yet:** the hooks docs give no version for the event and are silent on how an older Claude Code treats an unknown event name in `settings.json` (ignored vs the whole file rejected). The transcript already holds the summary. Ship only behind a version check in `install.sh`, or once the minimum supported Claude Code version is known to have the event.
+**Blocked on:** a human. v6.20.0 is built on the documented hook contract and unit-tested on our side; a session cannot trigger its own compaction, and a nested `claude -p` is not an option. Until someone looks, the gotchas entry stays `confidence: inferred`.
 
-### L/S — Observe one live compaction
+#### L/S — Watch the background refresh across platforms
 
-**What:** in a real session, run `/compact` once and check: `compact-snapshot.md` written with the right turns; the summary ends with the working-state line; the `<memory-record>` block arrives after the summary; `hook-diag.jsonl` shows `source=compact inject=session`.
+**What:** after a few days on v6.21.0+, check `doctor.sh` → *Index refresh* on macOS and Linux.
 
-**Why:** v6.20.0 is built on the documented contract and unit-tested on our side only — a session cannot trigger its own compaction, and nested `claude -p` is not an option here. Until someone looks, the gotchas entry stays `confidence: inferred`.
+**Blocked on:** whether Claude Code lets a hook's detached child outlive the hook on every platform is not documented. Verified on Windows Git Bash only. If a platform kills it, the doctor will say "kicked but none has ever completed" — then move the refresh to an `async` hook or run it inline in `recall.sh` only (which already self-heals).
 
-### L/S — `mcp-recall.mjs` without qmd
+#### L/S — PostCompact: keep the compact summary
 
-**What:** `search_memory` still requires qmd and does not search the current repo's docs. Give it the same behaviour as `bin/recall.sh` — either a small built-in scan, or spawning the script (needs a reliable way to find `bash` from Windows-native node).
+**What:** a PostCompact hook whose input carries `compact_summary`; save it next to SESSION.md.
 
-**Why:** subagents and headless runs are the callers least able to work around an empty result.
+**Blocked on:** the hooks docs give no version for the event and are silent on how an older Claude Code treats an unknown event name in `settings.json`. The transcript already holds the summary. Ship behind a version check, or once the minimum supported Claude Code version is known to have the event.
 
-### L/S — Native memory is keyed by git root, ours by cwd
+### Parked — sound idea, not worth its cost today
 
-**What:** a session started in a subdirectory of a repo gets its own `projects/<slug>/` here, while Claude Code's native memory would use the repo root's. v6.21.0 unified `project.md` for linked worktrees only. Decide whether `project.md` should resolve to the repo root for subdirectory sessions too.
+#### L/M — Ship as a Claude Code plugin
 
-**Why:** project knowledge split by the directory a session happened to start in. Low urgency: `SESSION.md` per cwd is arguably right, and most sessions start at the root.
+A plugin can carry hooks (`hooks/hooks.json`, `${CLAUDE_PLUGIN_ROOT}`), namespaced commands and agents — but **not** an always-loaded `CLAUDE.md`, which is the protocol itself; it would have to arrive through SessionStart `additionalContext`, capped at 10,000 characters, on every session. Every script also assumes `~/.claude/bin`. That is a second install path to keep correct on three platforms for the sake of a nicer first install. Revisit if plugins gain a way to contribute instructions.
 
-### M/L — Closed-book memory eval
+#### L/M — `merge-settings.sh` jq-only path: no sync pass
 
-**What:** N canned questions per repo, answered by a subagent that may read only the memory files; grep-able answers. First target: does caveman compression of SESSION.md/project.md lose answers?
+On a machine with jq but neither python3 nor node, an upgrade keeps an old PostToolUse matcher and cannot add our hook to an event another tool already occupies. Rare configuration; the in-script gates keep the old matcher cheap. Port the dedup + sync logic to jq if a real report comes in.
 
-**Why:** nothing in this repo measures whether the memory actually carries what a fresh agent needs. One survey data point: a compressed dialect cost another system a large recall drop.
+#### L/S — `project.md` keyed by repo root for subdirectory sessions
 
-### L/M — Ship as a Claude Code plugin
+v6.21.0 shares `project.md` across linked worktrees. A session started in a *subdirectory* of a repo still gets its own project directory, because Claude Code keys transcripts by cwd and `SESSION.md` should stay with them. Resolving only `project.md` to the repo root is possible, but splits the two files across directories for little gain — most sessions start at the root.
 
-**What:** `hooks/hooks.json` + `${CLAUDE_PLUGIN_ROOT}`, commands namespaced. A plugin cannot contribute an always-loaded CLAUDE.md — the protocol would have to arrive via SessionStart `additionalContext` (10,000-char cap).
+#### M/L — An LLM-answered eval
 
-**Tradeoff:** two install paths to maintain; do it only together with the `/memory` rename.
+`memory-eval.sh` measures retrieval: does recall return a file that holds the answer. Whether an agent then *answers correctly* needs a model run per question — non-deterministic, costs tokens, cannot gate CI. Worth doing by hand before changing the compression notation or the SESSION.md template: have a subagent that may read only the memory files answer the same questions, and compare.
 
----
+### Rejected — with the reason
 
-### M/L — Lightweight vector search without qmd  *(deferred — not a batch item)*
+#### Lightweight vector search without qmd (ONNX embedder)
 
-**Status:** the one M-priority item **not** shipped in the v6.17.0 M-sweep, deliberately. It needs ONNX Runtime **native bindings**, adds significant package size, and requires per-platform validation (Windows first) — a multi-day research effort, not a mechanical batch change. Give it its own scoped release; don't fold it into a sweep.
+The motivation was that qmd's setup friction left many installs without any search. Since v6.21.0 `/recall` works with ripgrep or plain grep and qmd is optional, so the friction no longer costs recall — only hybrid search, which is an opt-in refinement. Bundling ONNX Runtime means native bindings and per-platform validation for a marginal gain. The survey also found plain filesystem search competitive with dedicated memory stores on published benchmarks.
 
-**What:** Replace `qmd embed` dependency with a pure-Node local embedder using ONNX Runtime + a small model (e.g. all-MiniLM-L6-v2 at ~23 MB). Ship inside the package.
+#### Remote sync for IDENTITY.md / project.md
 
-**Why:** `qmd` requires separate install + GGUF model download (hundreds of MB). Many users skip vector search entirely because setup friction is too high. A bundled ONNX embedder would make hybrid search zero-dependency.
+Out of scope for a tool whose promise is "plain files you own". Syncing account memory is a private git repository in `~/.claude/memory` (or any file-sync tool); encrypting and scheduling it is a separate product with its own failure modes.
 
-**Tradeoff:** Larger package size. ONNX Runtime has native bindings — adds install complexity on some platforms. Validate on Windows first (biggest pain point currently).
+#### Link-graph rerank for `/recall`
 
----
+Needs a link-graph builder and a rerank step for stores that are, in practice, a few dozen files per project. Ranking by distinct query terms plus "curated before transcripts" already puts related docs together; no measured miss points at link structure.
 
-### L/M — `/recall` cross-project timeline view
+#### Hindsight-style automatic memory (LLM extraction at write time, background consolidation, entity graph)
 
-**What:** `qmd` flag or new `/recall --timeline` variant that shows results sorted by `last_updated` across all projects, not just ranked by relevance.
-
-**Why:** Useful for "what was I doing on project X last week?" queries where recency matters more than semantic similarity.
-
-**How:** Post-process `qmd search` results by extracting `last_updated` from matched file frontmatter and re-sorting. No changes to qmd itself needed.
-
----
-
-### L/L — Remote sync for IDENTITY.md and project.md (L0/L1-fallback)
-
-**What:** Optional encrypted sync of account-local memory files to a user-controlled remote (e.g. private Git repo or S3 bucket).
-
-**Why:** IDENTITY.md is the most irreplaceable file — machine wipe = total loss. Users who work across multiple machines have no sync path today.
-
-**Tradeoff:** Significant scope. Must be opt-in, encrypted, and auditable. Out of scope for core package — better as a separate companion tool.
-
----
-
-## Memory quality & token budget (iva analysis, 2026-07-05)
-
-Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (willow-tree memory: verbatim daily transcripts → rollup summaries → always-on CORE.md + typed cards). The H-priority items from this section (fact lifecycle, protocol slimming, transcript indexing) + distillation timeline shipped in v6.16.0; the mechanical-hygiene items (vault-doctor, index.md auto-generation, duplicate-hook check) shipped in v6.17.0 — see "Already shipped". What remains below is the L-priority tail.
-
-### L/L — Link-graph rerank for /recall
-
-**What:** Rerank BM25 hits by markdown-link proximity between memory files (iva reranks via its nightly-built vault graph).
-
-**Why:** Related docs surface together. Requires patching qmd or a post-processing wrapper + a link-graph builder. Low value until memory stores grow large; defer.
-
----
-
-## Compression & subagents (caveman analysis, 2026-07-07)
-
-Source: architect assessment against the `caveman` repo's usage analysis (`docs/analysis/optimal-usage.md` there): the two paradigms economically sounder than its flagship output-skill are (a) one-time compression of static memory files (~46% input cut, pay once / save every session) and (b) subagent tool-result digests with `path:line — symbol — note` format discipline. Verdict for this repo: write-time SESSION compression already ships (see "Already shipped"), and the format discipline is protocol-native (`# File map` = `path:line — <role>`, PROTOCOL.md rule-4 template). Gap (a) shipped in v6.18.0 (compression rule extended to project.md). Per-turn skill overhead / cache-thrash risks from that analysis don't apply here — our compression rule is injected once per session by hooks, not per turn.
-
-### L/M — Optional cavecrew-style subagent template (memory-researcher)
-
-**What:** Ship an opt-in agent template (e.g. `templates/agents/memory-researcher.md`) for long agentic sessions: subagent does the heavy searching/reading via `mcp-recall` tools (`search_memory`, `get_identity`) and returns only a digest in `path:line — symbol — note` format; raw tool-results stay in the subagent's context, extending the main thread's window.
-
-**Why:** Plumbing already exists — `bin/mcp-recall.mjs` was built precisely because slash commands are unreachable from subagents (README §MCP). Format discipline is already protocol-native (`# File map`). Complementary to (not overlapping) SESSION.md persistence: cavecrew compresses in-flight tool-results before compact; SESSION.md survives the compact.
-
-**Tradeoff:** The upstream ~60% tool-result-reduction figure is explicitly unverified — do not put numbers in README without an A/B. Must stay opt-in (install flag or manual copy) and daemon-free: core philosophy forbids background processes and auto-behavior. Low urgency until users run long multi-agent sessions against big memory stores.
-
----
-
-## Hook reliability
-
-### L/M — merge-settings.sh jq-only path: no sync pass
-
-**What:** python3 and node paths dedup by command and (since v6.19.0) sync matcher/hook keys of our single-hook groups. The jq-only path merges at event level: it adds missing events but neither adds our hook to an event that already exists nor migrates a matcher. Port both to jq.
-
-**Why:** on a machine with only jq, an upgrade keeps the old PostToolUse `*` matcher (the in-script gates still keep it cheap) and a foreign hook on the same event blocks ours from being registered.
+Requires a server, a database and a model call on every write, and promotes without being asked — the opposite of this project's two rules (no daemons, explicit promotion). What was worth taking from it is already in: the record-of-the-past framing, hook outcome diagnostics, commit-anchored freshness, worktree identity.
 
 ---
 
 ## Notes
 
-### Current top queue (all H items + distillation timeline shipped v6.16.0; all 18 M-priority items shipped v6.17.0)
+### Where things stand (2026-11)
 
-The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review, v6.20.0 the compaction path, v6.21.0 recall + coexistence with native memory. Next, in order:
-
-0. **Review 2026-11 section above** — shipped: compaction path (v6.20.0), recall + native-memory coexistence (v6.21.0). fact freshness — citations, origin gate, L1a diet (v6.22.0). Still owed: one live `/compact` observation. Next: closed-book eval → plugin packaging.
-1. **M/L — Lightweight vector search without qmd** *(deferred)* — ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
-2. **L/M — merge-settings.sh jq-only path** — no sync pass / no per-event dedup on jq-only systems.
-3. **L-tail** — **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
+All H and M items are shipped (v6.16.0–v6.23.0). The backlog above holds three *open* items that need a human or more platforms, four *parked* ones, and four *rejected* with reasons. New ideas go under **Open** with what blocks them — or straight to a release.
 
 ### Legend
 
