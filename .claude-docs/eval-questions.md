@@ -29,3 +29,5 @@ Run `bash bin/memory-eval.sh`. Each `q:` is what an agent would type after `/rec
   expect: grep 3.0
 - q: citation commit squash merge
   expect: merge commit
+- q: idle auto-compaction SessionStart resume
+  expect: does not re-inject

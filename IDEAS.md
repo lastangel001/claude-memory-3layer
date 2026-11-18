@@ -94,6 +94,7 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `mcp-recall.mjs` without qmd — built-in scan + current repo docs; no exit while a call is pending (v6.23.0)
 - [x] `memory-researcher` subagent template — opt-in, read-only, runs `recall.sh`, returns a digest (v6.23.0)
 - [x] Fixed: `grep -i -F` aborts under Git for Windows (grep 3.0) — plain-grep recall path was dead on Git Bash (v6.23.0)
+- [x] Observed one live manual compaction end to end — snapshot, summary instructions honoured, `source=compact` re-injection after the summary (v6.23.2, docs)
 
 ---
 
@@ -103,15 +104,13 @@ After the 2026-11 review (hooks vs current Claude Code, [vectorize-io/hindsight]
 
 ### Open — blocked on something outside the code
 
-#### L/S — Observe the post-compaction re-injection
+#### L/S — Re-injection after an *idle* auto-compaction
 
-**Known so far (2026-11-18, one live idle auto-compaction on v6.23.0):** PreCompact fired with `trigger: auto` on a session nobody was using; the snapshot was written and was correct (last five user turns, verified against the transcript). No SessionStart `source: compact` followed — the next one was `resume`. Details in gotchas.md.
+**Known (2026-11-18, v6.23.x, details in gotchas.md):** a manual `/compact` runs the whole chain — snapshot, summary ending with the working-state line, SessionStart `source: compact`, `<memory-record>` after the summary. An idle auto-compaction runs only the first step: PreCompact fires and the snapshot is written, but no SessionStart `source: compact` follows; the session's next SessionStart is `resume`.
 
-**Still to see:** a *manual* `/compact` typed in a session, then `doctor.sh` → *Hook outcomes*: is there a `SessionStart … source=compact inject=…` line, and did the `<memory-record>` block arrive after the summary?
+**What:** on `resume`, inline SESSION.md + the snapshot too when `compact-snapshot.md` is newer than the last time this session was given a `<memory-record>` (keep a per-session stamp next to the snapshot).
 
-**Blocked on:** a human at the keyboard. A session cannot trigger its own compaction, another session cannot send it the command (a cross-session message is a user turn, not `/compact`), and a nested `claude -p` is not an option.
-
-**If `source: compact` never shows up on the idle path:** consider inlining SESSION.md on `resume` too when `compact-snapshot.md` is newer than the session's last recorded injection — but only once the manual path has been seen working, so there is something to compare against.
+**Blocked on:** knowing whether the idle compaction's result is actually applied to the session at that point — the transcript shows nothing until the session is used again. Needs someone to resume a session after an idle compaction and look at what the model was given. Until then the plain fallback ("read SESSION.md FIRST") covers it.
 
 #### L/S — Watch the background refresh across platforms
 
@@ -167,7 +166,7 @@ Requires a server, a database and a model call on every write, and promotes with
 
 ### Where things stand (2026-11)
 
-All H and M items are shipped (v6.16.0–v6.23.0). The backlog above holds three *open* items that need a human or more platforms, four *parked* ones, and four *rejected* with reasons. New ideas go under **Open** with what blocks them — or straight to a release.
+All H and M items are shipped (v6.16.0–v6.23.0). The manual compaction path has been observed working end to end (v6.23.2). The backlog above holds three *open* items that need a human or more platforms, four *parked* ones, and four *rejected* with reasons. New ideas go under **Open** with what blocks them — or straight to a release.
 
 ### Legend
 
