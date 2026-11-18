@@ -101,6 +101,14 @@ JSEOF
   [[ "$output" == *"Split memory"*"home-u-proj"*"move its memory/"* ]]
 }
 
+@test "doctor: non-canonical memory directory without a twin is reported" {
+  mkdir -p "$TEST_HOME/projects/C--dev-old_name/memory"
+  printf '# Goal\nb\n' > "$TEST_HOME/projects/C--dev-old_name/memory/SESSION.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Non-canonical memory directory: 'C--dev-old_name'"*"'C--dev-old-name'"* ]]
+}
+
 @test "doctor: degraded hook outcomes are surfaced" {
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   {

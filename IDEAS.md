@@ -75,6 +75,9 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Staleness exemption for closed sessions (`status: done`) in `session-start.sh` + `vault-doctor.sh` (v6.19.0)
 - [x] Repo's own `.claude-docs/` tracked (architecture.md, generated index.md); `vault-doctor.sh` validates links in the repo `CLAUDE.md` (v6.19.0)
 - [x] Removed `/memory auto on|off` — flag read by no hook, contradicted explicit promotion (v6.19.0)
+- [x] Compaction path redesign — PreCompact writes `memory/compact-snapshot.md` (last user turns verbatim + git position) and prints plain-text summary instructions; SessionStart `source=compact` re-injects SESSION.md + snapshot within the 10,000-char cap; PROTOCOL rule 5 rewritten (v6.20.0)
+- [x] `<memory-record>` frame for injected state (record of the past, not an instruction) + stripped by `transcript-export.sh` (v6.20.0)
+- [x] `doctor.sh`: non-canonical memory directory without a twin (v6.20.0)
 
 ---
 
@@ -84,19 +87,17 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 
 Source: a review of this repo against the current Claude Code hooks/memory docs, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight) (server-based agent memory — opposite architecture, a few portable ideas) and a survey of 2026 agent-memory work. The reliability slice shipped in v6.19.0; what follows is the rest, in suggested order.
 
-### H/M — PreCompact cannot make the model flush: redesign the compaction path
+### L/S — PostCompact: keep the compact summary
 
-**What:** (1) `pre-compact.sh` prints plain stdout — per the hooks reference that text becomes *instructions for the summary* (10,000-char cap) — telling the summarizer what to keep verbatim (last user turns, decisions with rationale, next step, the SESSION.md path). (2) A deterministic side effect in the same hook: copy the last N user turns from the transcript into SESSION.md `# Recent turns` — no model involved. (3) New PostCompact hook: its input carries `compact_summary`; save it next to SESSION.md. (4) SessionStart with `source=compact`: inject SESSION.md's content directly (it is kept under 4 KB; the injection cap is 10,000 chars) instead of asking the model to read it.
+**What:** a PostCompact hook whose input carries `compact_summary`; save it next to SESSION.md (replaced each time).
 
-**Why:** today the hook emits `systemMessage`, which is shown to the user; compaction starts right after PreCompact returns, so the model gets no turn to write anything. The README's "PreCompact → flush → zero loss" describes a sequence the harness does not provide. See gotchas.md (`confidence: inferred` — verify empirically first: one manual `/compact` with the trace log open).
+**Why not yet:** the hooks docs give no version for the event and are silent on how an older Claude Code treats an unknown event name in `settings.json` (ignored vs the whole file rejected). The transcript already holds the summary. Ship only behind a version check in `install.sh`, or once the minimum supported Claude Code version is known to have the event.
 
-**Tradeoff:** parsing the transcript `.jsonl` relies on a format the docs call internal (`transcript-export.sh` already does). Keep the parser in one place.
+### L/S — Observe one live compaction
 
-### H/S — Frame injected memory as a record of the past
+**What:** in a real session, run `/compact` once and check: `compact-snapshot.md` written with the right turns; the summary ends with the working-state line; the `<memory-record>` block arrives after the summary; `hook-diag.jsonl` shows `source=compact inject=session`.
 
-**What:** wrap whatever SessionStart injects from SESSION.md/project.md in a fixed tag whose preamble says: this is a record, verify against the code before relying on it, it assigns no tasks — only `# State → next` is directive. Strip that tag in `transcript-export.sh` so injected text is not re-indexed as conversation.
-
-**Why:** hindsight's coding-agent integration converged on exactly this framing after injected history was replayed as instructions; they also strip their tag before storing transcripts to avoid a retain→recall loop. Becomes necessary the moment (4) above lands.
+**Why:** v6.20.0 is built on the documented contract and unit-tested on our side only — a session cannot trigger its own compaction, and nested `claude -p` is not an option here. Until someone looks, the gotchas entry stays `confidence: inferred`.
 
 ### M/M — Coexist with Claude Code's native auto memory
 
@@ -236,9 +237,9 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 ### Current top queue (all H items + distillation timeline shipped v6.16.0; all 18 M-priority items shipped v6.17.0)
 
-The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review. Next, in order:
+The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review and v6.20.0 the compaction path. Next, in order:
 
-0. **Review 2026-11 section above** — H/M compaction redesign (verify the PreCompact behaviour empirically first) → H/S record-of-the-past framing → M native-memory coexistence, `/memory` rename, `/recall` fallback.
+0. **Review 2026-11 section above** — compaction redesign + record framing shipped in v6.20.0 (one live `/compact` observation still owed) → next: M native-memory coexistence, `/memory` rename, `/recall` fallback → citations / `verified_at`.
 1. **M/L — Lightweight vector search without qmd** *(deferred)* — ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
 2. **L/M — merge-settings.sh jq-only path** — no sync pass / no per-event dedup on jq-only systems.
 3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.

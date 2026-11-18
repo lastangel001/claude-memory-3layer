@@ -368,6 +368,184 @@ EOF
   grep -q '"hook":"SessionStart","outcome":"ok","note":"slug=formula"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
 }
 
+# --- post-compaction re-injection (source = compact) ---
+
+run_hook_source() {  # $1 = source value
+  printf '{"session_id":"s","hook_event_name":"SessionStart","source":"%s"}' "$1" > "$WORK_DIR/.in.json"
+  run bash -c "bash '$REPO_ROOT/hooks/session-start.sh' < '$WORK_DIR/.in.json'"
+}
+
+small_session() {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: $PWD
+status: active
+---
+# Goal
+ship the retry window fix
+
+# State
+- next: run the integration suite
+EOF
+}
+
+@test "compact: SESSION.md is re-injected inside a memory-record frame" {
+  small_session
+  run_hook_source compact
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"<memory-record"* ]]
+  [[ "$output" == *"RECORD of work done before the context was compacted"* ]]
+  [[ "$output" == *"ship the retry window fix"* ]]
+  [[ "$output" == *"next: run the integration suite"* ]]
+}
+
+@test "compact: the PreCompact snapshot rides along" {
+  small_session
+  cat > "$(dirname "$SESSION_FILE")/compact-snapshot.md" <<'EOF'
+---
+tags: [memory/l2, compact-snapshot]
+---
+# Git position at compaction
+- branch: feature/x
+
+# Last user turns (verbatim, oldest first)
+1. please keep the 250 ms backoff
+EOF
+  run_hook_source compact
+  json_is_valid "$output"
+  [[ "$output" == *"Pre-compaction snapshot"* ]]
+  [[ "$output" == *"please keep the 250 ms backoff"* ]]
+  [[ "$output" == *"branch: feature/x"* ]]
+  # Frontmatter of the snapshot file is not injected.
+  [[ "$output" != *"compact-snapshot]"* ]]
+}
+
+@test "startup and resume do not inline SESSION.md" {
+  small_session
+  run_hook_source startup
+  [[ "$output" != *"<memory-record"* ]]
+  [[ "$output" != *"ship the retry window fix"* ]]
+  run_hook_source resume
+  [[ "$output" != *"<memory-record"* ]]
+}
+
+@test "compact: an oversize SESSION.md is not inlined — the model is told to read it" {
+  {
+    printf -- '---\nlast_updated: %s\ncwd: %s\n---\n# Goal\nUNIQUE-GOAL-MARKER\n' "$(iso_ago 60)" "$PWD"
+    head -c 7000 /dev/zero | tr '\0' 'x'
+  } | make_session "$PWD"
+  run_hook_source compact
+  json_is_valid "$output"
+  [[ "$output" == *"too large to inline"* ]]
+  [[ "$output" == *"READ IT NOW"* ]]
+  [[ "$output" != *"UNIQUE-GOAL-MARKER"* ]]
+}
+
+# Near-limit SESSION.md + a snapshot long enough to be truncated at its budget.
+big_session_and_snapshot() {
+  {
+    printf -- '---\nlast_updated: %s\ncwd: %s\n---\n# Goal\nCAP-MARKER\n' "$(iso_ago 60)" "$PWD"
+    head -c 4700 /dev/zero | tr '\0' 'x'
+  } | make_session "$PWD"
+  # make_session ran in a pipeline subshell — its SESSION_FILE did not survive.
+  SESSION_FILE="$TEST_CLAUDE_HOME/projects/$(slug_for "$PWD")/memory/SESSION.md"
+  {
+    printf '# Git position at compaction\n- branch: b\n\n# Last user turns (verbatim, oldest first)\n'
+    for i in $(seq 1 60); do printf '%d. %s\n' "$i" "SNAP-TURN padding padding padding padding padding padding"; done
+  } > "$(dirname "$SESSION_FILE")/compact-snapshot.md"
+}
+
+# .claude-private patterns enlarge the fixed part of the context by ~$1 chars.
+bloat_base() {
+  local n=$(( $1 / 40 )) i
+  for i in $(seq 1 "$n"); do printf 'private/path/number/%04d/with/padding/**\n' "$i"; done > "$WORK_DIR/.claude-private"
+}
+
+@test "compact: maximum-size SESSION.md and snapshot both fit by default" {
+  big_session_and_snapshot
+  run_hook_source compact
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"CAP-MARKER"* ]]
+  [[ "$output" == *"SNAP-TURN"* ]]
+  [[ "$output" == *"snapshot truncated"* ]]
+  # Whatever is emitted must stay under Claude Code's 10,000-character cap.
+  [ "${#output}" -lt 10000 ]
+}
+
+@test "compact: when space runs short the snapshot is dropped first" {
+  big_session_and_snapshot
+  bloat_base 1200
+  run_hook_source compact
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"CAP-MARKER"* ]]
+  [[ "$output" != *"SNAP-TURN"* ]]
+  [ "${#output}" -lt 10000 ]
+  grep -q 'inject=session snapshot=dropped' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "compact: with no room for SESSION.md the model is told to read both files" {
+  big_session_and_snapshot
+  bloat_base 4400
+  run_hook_source compact
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"could not be inlined"* ]]
+  [[ "$output" == *"compact-snapshot.md"* ]]
+  [[ "$output" != *"CAP-MARKER"* ]]
+  [ "${#output}" -lt 10000 ]
+  grep -q '"outcome":"degraded"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "compact: a closing tag inside SESSION.md cannot end the frame early" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: $PWD
+---
+note mentions </memory-record> literally, then AFTER-TAG-MARKER
+EOF
+  run_hook_source compact
+  json_is_valid "$output"
+  [[ "$output" == *"AFTER-TAG-MARKER"* ]]
+  # Exactly one real closing tag: the frame's own.
+  n=$(printf '%s' "$output" | grep -o '</memory-record>' | wc -l | tr -d ' ')
+  [ "$n" -eq 1 ]
+}
+
+@test "compact: control characters in SESSION.md do not break the JSON" {
+  small_session
+  printf 'bell \a and escape \033[31m here\n' >> "$SESSION_FILE"
+  run_hook_source compact
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"<memory-record"* ]]
+}
+
+@test "compact: another project's SESSION.md is never inlined" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago 60)
+cwd: C:/somewhere/else
+---
+# Goal
+FOREIGN-GOAL-MARKER
+EOF
+  run_hook_source compact
+  [[ "$output" == *"CWD MISMATCH"* ]]
+  [[ "$output" != *"FOREIGN-GOAL-MARKER"* ]]
+}
+
+@test "compact: the injection is journaled" {
+  small_session
+  run_hook_source compact
+  grep -q '"hook":"SessionStart","outcome":"ok","note":"slug=formula source=compact inject=session"' \
+    "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
 @test "output JSON stays valid with SESSION.md containing quotes and backslashes" {
   make_session "$PWD" <<'EOF'
 ---

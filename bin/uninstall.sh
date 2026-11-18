@@ -49,7 +49,7 @@ HOOKS=(session-start.sh pre-compact.sh post-tool-use.sh)
 COMMANDS=(recall.md codemap.md memory.md memstat.md onboard-memory.md
           migrate-legacy-memory.md session-end.md)
 BINS=(codemap.sh doctor.sh memstat.sh merge-settings.sh onboard-report.sh
-      transcript-export.sh update.sh mcp-recall.mjs vault-doctor.sh
+      transcript-export.sh compact-snapshot.sh update.sh mcp-recall.mjs vault-doctor.sh
       gen-index.sh uninstall.sh)
 LIBS=(slug.sh diag.sh paths.sh validate-json.sh)
 

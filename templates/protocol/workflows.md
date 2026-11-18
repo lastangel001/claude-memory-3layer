@@ -8,7 +8,9 @@ Read on demand from the core protocol (`~/.claude/CLAUDE.md`). Not loaded automa
 
 ## Pre-compact checkpoint
 
-When the user signals an upcoming compact ("compact me", "теперь можно компакт"):
+This ritual is for a compaction the user **announces** ("compact me", "теперь можно компакт") — the only case where you get a turn before it happens. Auto-compact gives no turn at all: there the PreCompact hook snapshots the last user turns + git position by itself and SessionStart re-injects SESSION.md afterwards, so what protects you is having kept SESSION.md current all along.
+
+When the user signals an upcoming compact:
 
 1. Confirm git is clean (or note dirty files explicitly)
 2. Confirm pushed to remote (`git status -sb`)

@@ -23,7 +23,8 @@ Pure bash (4+) plus one zero-dependency Node script. No build step, no daemon. T
 ## Runtime flow
 
 1. **SessionStart** (`hooks/session-start.sh`) — reads hook stdin, resolves the project directory, runs staleness / cwd-mismatch / size checks on SESSION.md, strips `<private>` blocks in place, and emits one JSON object whose `additionalContext` carries the protocol reminder plus the **absolute paths** of SESSION.md and project.md. Also kicks a debounced background `transcript-export.sh` + `qmd update`.
-2. **PreCompact** (`hooks/pre-compact.sh`) — emits a `systemMessage` flush reminder.
+2. **PreCompact** (`hooks/pre-compact.sh`) — calls `bin/compact-snapshot.sh` (last user turns verbatim + git position → `memory/compact-snapshot.md`) and prints plain-text instructions for the compaction summary. No JSON: Claude Code discards a PreCompact hook's `systemMessage`.
+   After compaction SessionStart runs again with `source: compact` and inlines SESSION.md + the snapshot in a `<memory-record>` frame, within the 10,000-character hook-context cap (sheds the snapshot first, then falls back to a read instruction).
 3. **PostToolUse** (`hooks/post-tool-use.sh`) — appends an `[auto]` line to SESSION.md for a new git commit or an edit of `CLAUDE.md` / `.claude-docs/*.md`. Two pure-bash gates exit before any interpreter is spawned.
 
 All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 with fallback JSON. A hook must never block a session or a tool call.
@@ -37,7 +38,7 @@ All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 wit
 
 ## State under `~/.claude` (none of it in git)
 
-- `projects/<slug>/memory/{SESSION.md,project.md}` — L2 / L1-fallback; `.auto-last-commit` — sha of the last auto-captured commit; `raw/transcripts/` — exported transcripts.
+- `projects/<slug>/memory/{SESSION.md,project.md}` — L2 / L1-fallback; `compact-snapshot.md` — machine-written at every compaction, replaced each time; `.auto-last-commit` — sha of the last auto-captured commit; `raw/transcripts/` — exported transcripts.
 - `debug/hook-trace.log` (free text) and `debug/hook-diag.jsonl` (structured) — both rotated to 2000 lines once a day by SessionStart.
 - `.memory-version`, `.memory-source` — written by `install.sh`, read by `update.sh` and the version nudge.
 - Markers: `.qmd-last-refresh`, `.version-check`. Flags: `.session-compress-disabled`, `.transcript-export-disabled`.
