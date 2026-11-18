@@ -213,3 +213,15 @@ Claude Code refuses a `Write` to a file that changed since the model last read i
 confidence: inferred
 
 Per the Claude Code hooks reference, compaction starts right after PreCompact returns — the model gets no turn in between, `systemMessage` is shown to the *user*, and plain stdout is appended to the *summarizer's* instructions. So `pre-compact.sh`'s "FLUSH REQUIRED" text reaches neither the model before compaction nor the summary. What actually protects state today is the continuous-update rule plus the SessionStart re-run after compaction. Not yet verified empirically; the redesign (stdout as summary instructions, deterministic side effects, PostCompact, SessionStart `source=compact`) is tracked in IDEAS.md.
+
+## A `# shellcheck disable=` directive covers only the next command
+
+confidence: verified
+
+**Symptom:** CI red on the shellcheck step with `SC2154: slug_source is referenced but not assigned` in `bin/doctor.sh`, although a `disable=SC2154` comment sat two lines above. bats never ran on that job — shellcheck is an earlier step.
+
+**Cause:** the directive was written above an assignment and was meant to also cover the `if` that followed. A directive applies to the single command after it (a whole `if`/`for`/function when placed directly above that compound command), not to "the lines below". shellcheck reports SC2154 once per variable per file, at the first uncovered reference.
+
+**Fix:** one directive directly above each command that first references a variable set by a sourced library.
+
+**Lesson:** shellcheck is not installed on the dev machine, so this class only surfaces in CI — open a PR rather than pushing to `main`, and read the ubuntu job first: a failure there in seconds means lint, not tests.

@@ -24,6 +24,7 @@ A review of the hooks against a long-lived install: several mechanisms were work
 **Changed**
 - `/recall` examples in README and `commands/recall.md` replaced with invented ones.
 - Session-start reads hook stdin without blocking (`read -t`, skipped on a terminal); `doctor.sh` runs its self-test with `</dev/null`.
+- `doctor.sh`: shellcheck `disable` directive placed on the command that actually references the sourced variable (the first CI run of this release failed on SC2154 before reaching the tests).
 
 **Upgrade notes**
 - Run `bash ~/.claude/bin/update.sh` (or `./install.sh`): the PostToolUse matcher is migrated in `settings.json` with a backup.

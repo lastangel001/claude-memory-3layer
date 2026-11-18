@@ -224,8 +224,10 @@ say "Current project:"
 # shellcheck source=lib/slug.sh
 source "${CLAUDE_HOME}/bin/lib/slug.sh"
 _resolve_project
-# shellcheck disable=SC2154  # project_dir + slug_source set by sourced _resolve_project
+# shellcheck disable=SC2154  # project_dir set by sourced _resolve_project
 session_file="${project_dir}/memory/SESSION.md"
+# A disable directive covers only the NEXT command, so the `if` needs its own.
+# shellcheck disable=SC2154  # slug_source set by sourced _resolve_project
 if [[ "$slug_source" == "legacy" ]]; then
   warn "Memory for this project lives under the pre-v6.19.0 slug directory: $project_dir"
 fi
