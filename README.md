@@ -125,7 +125,7 @@ What makes this work is the continuous-update rule: `SESSION.md` is written as t
 
 ### `/recall <query>` — memory search that works with or without qmd
 
-One call searches account memory (identity, every project's SESSION.md / project.md, exported transcripts) **and** the current repo's own `.claude-docs/`, `CLAUDE.md`, `AGENTS.md` — the place gotchas actually live. With [qmd](https://github.com/tobi/qmd) (Tobi Lütke) installed, memory goes through BM25 (`--hybrid` adds GGUF embeddings + rerank); without it, through ripgrep/grep with a simple ranking (files matching more query words first, curated memory before transcripts). `--here` limits memory to the current project. A stale index is refreshed inline; a query with no hits anywhere is appended to `~/.claude/logs/recall-misses.log`. Backed by `bin/recall.sh`.
+One call searches account memory (identity, every project's SESSION.md / project.md, exported transcripts) **and** the current repo's own `.claude-docs/`, `CLAUDE.md`, `AGENTS.md` — the place gotchas actually live. With [qmd](https://github.com/tobi/qmd) (Tobi Lütke) installed, memory goes through BM25 (`--hybrid` adds GGUF embeddings + rerank); without it, through ripgrep/grep with a simple ranking (files matching more query words first, curated memory before transcripts). `--here` limits memory to the current project. A stale index is refreshed inline; a query with no hits anywhere is appended to `~/.claude/logs/recall-misses.log`. `--timeline [words]` switches from relevance to recency: the dated `## Timeline` lines of every `project.md`, newest first — "what was I doing on X last week?" without any index. Backed by `bin/recall.sh`.
 
 ```
 /recall MongoDB legacy driver
@@ -155,6 +155,15 @@ Internally uses `bin/onboard-report.sh` to collect raw data (stack files, direct
 /onboard-memory
 ```
 
+### `/memory-eval` — does the repo's memory still answer its own questions?
+
+A closed-book retrieval check. `.claude-docs/eval-questions.md` holds canned questions with the text a correct answer must contain; for each one `bin/memory-eval.sh` asks `/recall` over the repo's docs only — what a fresh clone has — and verifies that one of the top files returned holds the expected text. No model, no qmd, same result locally and in CI, non-zero exit on a miss: a doc edit that loses an answer is a regression like any other. This repo runs its own question file in its test suite.
+
+```
+- q: how is the project directory found
+  expect: transcript_path
+```
+
 ### `/session-end` — distil & close a task
 
 Enforces the wrap-up ritual so high-signal work isn't lost at the next compact: promotes SESSION.md's durable facts to their permanent layer (gotchas / architecture / conventions / `CLAUDE.md` / IDENTITY / project.md — in-repo beats account-local), appends one `## Timeline` line to `project.md`, confirms what was promoted, then wipes SESSION.md to a clean template (keeping the `cwd:` anchor). Never commits — repo edits are proposed for you to review.
@@ -170,7 +179,7 @@ Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors e
 
 ### MCP: `search_memory` / `get_identity` — memory for subagents
 
-Slash commands are unreachable from subagents, task runners and `claude -p` headless mode. `bin/mcp-recall.mjs` (zero dependencies, stdio, no daemon) exposes the same BM25 search and the L0 identity as MCP tools callable inside any agentic loop:
+Slash commands are unreachable from subagents, task runners and `claude -p` headless mode. `bin/mcp-recall.mjs` (zero dependencies, stdio, no daemon) exposes the same BM25 search and the L0 identity as MCP tools callable inside any agentic loop: Since v6.23.0 `search_memory` no longer needs qmd: without it the server scans the memory files itself (same ranking idea as `recall.sh`), and in both cases it also searches the current repo's `.claude-docs` / `CLAUDE.md`. A subagent that can run Bash can simply call `bash ~/.claude/bin/recall.sh` — the opt-in `memory-researcher` agent template (`templates/agents/`) does exactly that and returns a digest instead of file dumps.
 
 ```bash
 claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
@@ -299,6 +308,7 @@ memory/IDENTITY.md              — L0 template
 templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
+templates/agents/memory-researcher.md — opt-in subagent: multi-query memory research, returns a path:line digest
 hooks/session-start.sh          — project-dir resolution + absolute memory paths + staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — compaction checkpoint (compact-snapshot.md) + plain-text instructions for the summary
 hooks/post-tool-use.sh          — selective auto-capture: new git commits, CLAUDE.md / .claude-docs edits
@@ -308,6 +318,7 @@ commands/memstat.md             — /memstat slash command (memory subsystem sta
 commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
 commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (legacy → L1-fallback synthesis)
 commands/session-end.md         — /session-end slash command (distil + wipe task ritual)
+commands/memory-eval.md         — /memory-eval slash command (retrieval coverage of the repo's docs)
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — install health check (files, settings, dup hooks, CRLF, dynamic self-test, split memory dirs, hook outcomes)
 bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links incl. the CLAUDE.md doc index, `src:` citations, CLAUDE.md diet); --fix
@@ -317,9 +328,10 @@ bin/memstat.sh                  — memory subsystem status / task manager + --r
 bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard-memory
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
-bin/mcp-recall.mjs              — zero-dep MCP server: search_memory + get_identity for subagents/headless
+bin/mcp-recall.mjs              — zero-dep MCP server: search_memory (qmd or built-in scan, + repo docs) + get_identity for subagents/headless
 bin/compact-snapshot.sh         — last user turns verbatim + git position → memory/compact-snapshot.md (called by PreCompact)
-bin/recall.sh                   — memory search: qmd or ripgrep fallback + current repo docs; misses log (backs /recall)
+bin/recall.sh                   — memory search: qmd or ripgrep/grep fallback + current repo docs; --timeline; misses log (backs /recall)
+bin/memory-eval.sh              — closed-book retrieval check: canned questions vs what /recall returns from repo docs (backs /memory-eval)
 bin/transcript-export.sh        — export Claude Code .jsonl transcripts → searchable markdown (SessionStart)
 bin/lib/slug.sh                 — project-directory resolver: transcript_path → formula → legacy dir (sourced by hooks, doctor, /session-end)
 bin/lib/diag.sh                 — hook outcome journal writer (debug/hook-diag.jsonl; sourced by all three hooks)
@@ -327,7 +339,7 @@ bin/lib/paths.sh                — shared PATH augmentation for Node/npm toolin
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (191 cases: hooks, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (209 cases: hooks, memory eval, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements

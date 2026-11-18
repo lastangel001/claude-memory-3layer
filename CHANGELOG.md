@@ -1,5 +1,23 @@
 # Changelog
 
+## v6.23.0 — 2026-11-18 — backlog tail: eval, timeline, recall for subagents
+
+**Fixed**
+- **`grep -i -F` aborts under Git for Windows.** GNU grep 3.0 crashes (exit 134) on a case-insensitive fixed-string search. `recall.sh`'s plain-grep path — the one used when ripgrep is missing — therefore returned nothing on Git Bash, and the abort looked like "no matches". All three call sites now escape the literal and use `grep -i -e`; a test runs the grep path with ripgrep removed from PATH.
+- `mcp-recall.mjs` exited as soon as stdin closed, even with a search still running — a reply that arrived late was lost.
+
+**Added**
+- **`bin/memory-eval.sh` + `/memory-eval`** — closed-book retrieval check. Canned questions in `<repo>/.claude-docs/eval-questions.md` (`- q:` / `expect:`), each asked through `recall.sh` over the repo's docs only; a question passes when one of the top files returned holds the expected text. Deterministic, no model, no qmd; non-zero exit on a miss. This repo ships its own question file and runs it in the test suite — a doc edit that loses an answer now fails CI.
+- **`/recall --timeline [words]`** — the dated `## Timeline` lines of every `project.md`, newest first; optional words filter, `--here` for one project. Recency instead of relevance, no index needed.
+- **`/recall --no-memory`** — repo docs only.
+- **`search_memory` (MCP) without qmd** — the server scans memory files itself when qmd cannot be started (`MEMORY_RECALL_ENGINE=scan` forces it), and in every case also searches the current repo's `.claude-docs` / `CLAUDE.md` / `AGENTS.md`.
+- **`templates/agents/memory-researcher.md`** — opt-in, read-only subagent: several recall queries, reads what they surface, returns a `path:line — fact — confidence — citation` digest. Installed as a template only; enabling is a deliberate `cp` into `~/.claude/agents/`.
+- Tests: 191 → 209.
+- CI: `timeout-minutes: 25` on the test job (a hung test would otherwise hold a runner for six hours).
+
+**Backlog**
+- `IDEAS.md` is reorganised: every remaining idea is either *open* with what blocks it, or *parked / rejected* with the reason — no silent leftovers.
+
 ## v6.22.0 — 2026-11-18 — fact freshness: citations, verify-before-use, a leaner L1a
 
 Memory describes the code as it was. This release gives a recorded fact a way to say where it came from, and gives the doctor a way to notice that the place has changed.

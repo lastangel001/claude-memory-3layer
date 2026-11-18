@@ -288,6 +288,7 @@ chmod +x ~/.claude/bin/codemap.sh
 You get:
 - **`/recall <query>`** — search over account memory and the current repo's docs (qmd when installed, ripgrep otherwise)
 - **`/codemap def|callers|callees|outline <symbol>`** — on-demand symbol queries in cwd repo (ctags+ripgrep)
+- **`/memory-eval`** — closed-book retrieval check of the current repo's docs against `.claude-docs/eval-questions.md` (deterministic; suitable for CI)
 - **`/memstat [--watch|--refresh]`** — "task manager" for the memory subsystem (and the manual index refresh; the former `/memory` command is gone — that name is a Claude Code built-in): running qmd/ctags processes, index progress (vectors vs pending), refresh schedule, and a stall/health check. Use when `node.exe` is eating CPU and you want to see what it's doing.
 
 ### 4. MCP server — memory for subagents and headless runs (optional)
@@ -304,7 +305,7 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 > claude mcp add --scope user memory-recall -- node "$(cygpath -w ~/.claude/bin/mcp-recall.mjs)"
 > ```
 
-Tools exposed: `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` (returns L0 IDENTITY.md). Requires Node 18+ and `qmd` on PATH for search; `get_identity` works without qmd. The server resolves `qmd` even when it's an npm shim (Windows) by running its JS entry with the current `node` — set `QMD_BIN` to override the path. No daemon — Claude Code spawns it per session over stdio.
+Tools exposed: `search_memory(query, limit?, collection?)` (BM25 via `qmd search`) and `get_identity()` (returns L0 IDENTITY.md). Requires Node 18+ and `qmd` on PATH for search; `get_identity` works without qmd. The server resolves `qmd` even when it's an npm shim (Windows) by running its JS entry with the current `node` — set `QMD_BIN` to override the path. No daemon — Claude Code spawns it per session over stdio. Since v6.23.0 `search_memory` works without qmd (built-in literal scan) and also searches the current repo's `.claude-docs` / `CLAUDE.md`; `MEMORY_RECALL_ENGINE=scan` forces the scan.
 
 ### 5. Verbatim transcript export (rolling recall layer)
 
@@ -321,6 +322,17 @@ Controls:
 - A project with `.claude-private` in its root is never exported
 - `<private>...</private>` blocks are stripped from exports
 - Retention: `TRANSCRIPT_KEEP_DAYS` (default 30) — older exports are deleted; size cap per file: `TRANSCRIPT_MAX_BYTES` (default 300000)
+
+## Optional: `memory-researcher` subagent
+
+For questions that need more than one `/recall` ("did we hit this before, in any project?"), a read-only subagent can do the searching and reading in its own context and hand back a short digest. The template is installed but **not enabled** — enabling is a deliberate copy:
+
+```bash
+mkdir -p ~/.claude/agents
+cp ~/.claude/templates/agents/memory-researcher.md ~/.claude/agents/
+```
+
+It only runs `bin/recall.sh` and reads files; it never writes. Remove the copied file to disable it.
 
 ## Native auto memory (Claude Code built-in)
 

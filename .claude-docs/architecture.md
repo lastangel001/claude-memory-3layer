@@ -38,7 +38,7 @@ All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 wit
 
 ## Search
 
-`commands/recall.md` only tells the model to run `bin/recall.sh` — all logic lives in the script so it can be tested. Memory section: qmd (`search` / `query`, `-n`, `-c`) when installed, otherwise ripgrep/grep ranking; `--here` always goes through ripgrep. Repo-docs section: ripgrep/grep over `<repo>/.claude-docs`, `CLAUDE.md`, `AGENTS.md`, every time. `MEMORY_QMD_CMD` overrides the qmd command (tests point it at a stub — PATH is augmented inside the script, so a stub on PATH would lose to a real install). `bin/mcp-recall.mjs` is the separate, qmd-only path for subagents.
+`commands/recall.md` only tells the model to run `bin/recall.sh` — all logic lives in the script so it can be tested. Memory section: qmd (`search` / `query`, `-n`, `-c`) when installed, otherwise ripgrep/grep ranking; `--here` always goes through ripgrep. Repo-docs section: ripgrep/grep over `<repo>/.claude-docs`, `CLAUDE.md`, `AGENTS.md`, every time. `MEMORY_QMD_CMD` overrides the qmd command (tests point it at a stub — PATH is augmented inside the script, so a stub on PATH would lose to a real install). `--timeline` skips searching and prints dated `## Timeline` lines from every `project.md`; `--no-memory` restricts a search to repo docs. `bin/mcp-recall.mjs` is the MCP path for subagents: qmd when it can be started, otherwise its own literal scan, plus the cwd's repo docs. Never write `grep -i -F` anywhere in this path (see gotchas.md).
 
 ## State under `~/.claude` (none of it in git)
 
@@ -50,6 +50,7 @@ All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 wit
 ## Health tooling
 
 - `bin/doctor.sh` — the *install*: files, settings.json, duplicate registrations, CRLF, dynamic self-test of installed hooks, split memory directories, hook outcomes.
+- `bin/memory-eval.sh` — the *usefulness*: canned questions in `.claude-docs/eval-questions.md`, each answered by `recall.sh --no-memory`; passes when a returned file holds the expected text. Runs in `tests/memory-eval.bats` against this repo's own docs.
 - `bin/vault-doctor.sh` — the *content*: IDENTITY size, SESSION size/staleness, `.claude-docs` frontmatter / orphans / links, including the doc index in the repo's `CLAUDE.md`; `src:` citations (file / symbol still there, commits since the cited one); CLAUDE.md diet (length, lines copied from README).
 
 ## Tests and CI

@@ -93,6 +93,7 @@ backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/me
 backup_and_install "$SRC/commands/onboard-memory.md"   "$CLAUDE_HOME/commands/onboard-memory.md"
 backup_and_install "$SRC/commands/migrate-legacy-memory.md" "$CLAUDE_HOME/commands/migrate-legacy-memory.md"
 backup_and_install "$SRC/commands/session-end.md"      "$CLAUDE_HOME/commands/session-end.md"
+backup_and_install "$SRC/commands/memory-eval.md"      "$CLAUDE_HOME/commands/memory-eval.md"
 backup_and_install "$SRC/bin/codemap.sh"               "$CLAUDE_HOME/bin/codemap.sh"
 backup_and_install "$SRC/bin/doctor.sh"                "$CLAUDE_HOME/bin/doctor.sh"
 backup_and_install "$SRC/bin/memstat.sh"               "$CLAUDE_HOME/bin/memstat.sh"
@@ -101,6 +102,7 @@ backup_and_install "$SRC/bin/onboard-report.sh"        "$CLAUDE_HOME/bin/onboard
 backup_and_install "$SRC/bin/transcript-export.sh"     "$CLAUDE_HOME/bin/transcript-export.sh"
 backup_and_install "$SRC/bin/compact-snapshot.sh"      "$CLAUDE_HOME/bin/compact-snapshot.sh"
 backup_and_install "$SRC/bin/recall.sh"                "$CLAUDE_HOME/bin/recall.sh"
+backup_and_install "$SRC/bin/memory-eval.sh"           "$CLAUDE_HOME/bin/memory-eval.sh"
 backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
 backup_and_install "$SRC/bin/vault-doctor.sh"          "$CLAUDE_HOME/bin/vault-doctor.sh"
 backup_and_install "$SRC/bin/gen-index.sh"             "$CLAUDE_HOME/bin/gen-index.sh"
@@ -113,7 +115,8 @@ backup_and_install "$SRC/bin/lib/validate-json.sh"     "$CLAUDE_HOME/bin/lib/val
 
 # Templates (referenced by CLAUDE.md protocol + /onboard-memory)
 if [[ $DRY_RUN -eq 0 ]]; then
-  mkdir -p "$CLAUDE_HOME/templates/repo/.claude-docs" "$CLAUDE_HOME/templates/protocol"
+  mkdir -p "$CLAUDE_HOME/templates/repo/.claude-docs" "$CLAUDE_HOME/templates/protocol" \
+           "$CLAUDE_HOME/templates/agents"
 fi
 backup_and_install "$SRC/templates/project.md.fallback.template" "$CLAUDE_HOME/templates/project.md.fallback.template"
 backup_and_install "$SRC/templates/repo/CLAUDE.md"               "$CLAUDE_HOME/templates/repo/CLAUDE.md"
@@ -125,6 +128,12 @@ done
 for _t in "$SRC/templates/protocol/"*.md; do
   [[ -f "$_t" ]] || continue
   backup_and_install "$_t" "$CLAUDE_HOME/templates/protocol/$(basename "$_t")"
+done
+# Opt-in subagent templates: installed as TEMPLATES only. Nothing lands in
+# ~/.claude/agents/ — enabling one is a deliberate `cp` (see INSTALL.md).
+for _t in "$SRC/templates/agents/"*.md; do
+  [[ -f "$_t" ]] || continue
+  backup_and_install "$_t" "$CLAUDE_HOME/templates/agents/$(basename "$_t")"
 done
 
 if [[ $DRY_RUN -eq 0 ]]; then

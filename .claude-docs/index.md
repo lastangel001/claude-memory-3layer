@@ -12,6 +12,7 @@ Routing table. Start here when unsure which doc to read.
 |---|---|
 | [architecture.md](architecture.md) | Layout, runtime flow of the three hooks, shared libs, state files, how install maps repo to ~/.claude |
 | [dev-workflow.md](dev-workflow.md) | Making a commit — README/CHANGELOG/IDEAS update rules, commit format, versioning |
+| [eval-questions.md](eval-questions.md) | Canned questions for bin/memory-eval.sh — what this repo's docs must keep answering |
 | [gotchas.md](gotchas.md) | Cross-platform footguns — install/doctor/path-handling; unexpected behavior |
 <!-- AUTO-INDEX:END -->
 
