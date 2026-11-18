@@ -11,6 +11,10 @@
 # Usage:
 #   ./install.sh            # installs to ~/.claude (or $CLAUDE_HOME if set)
 #   ./install.sh --dry-run  # show what would change, write nothing
+#   ./install.sh --native-memory=off
+#                           # also set "autoMemoryEnabled": false in settings.json
+#                           # (Claude Code's built-in auto memory shares our
+#                           # directory; see INSTALL.md → Native auto memory)
 
 set -e
 
@@ -18,7 +22,15 @@ CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 TS=$(date +%Y%m%d-%H%M%S)
 SRC=$(cd "$(dirname "$0")" && pwd)
 DRY_RUN=0
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
+NATIVE_MEMORY="keep"
+for _arg in "$@"; do
+  case "$_arg" in
+    --dry-run)           DRY_RUN=1 ;;
+    --native-memory=off) NATIVE_MEMORY="off" ;;
+    --native-memory=keep) NATIVE_MEMORY="keep" ;;
+    *) printf 'Unknown argument: %s\n' "$_arg" >&2; exit 2 ;;
+  esac
+done
 
 # Shared JSON validator (python3 → node → jq).
 # shellcheck source=bin/lib/validate-json.sh
@@ -77,7 +89,6 @@ backup_and_install "$SRC/hooks/pre-compact.sh"         "$CLAUDE_HOME/hooks/pre-c
 backup_and_install "$SRC/hooks/post-tool-use.sh"       "$CLAUDE_HOME/hooks/post-tool-use.sh"
 backup_and_install "$SRC/commands/recall.md"           "$CLAUDE_HOME/commands/recall.md"
 backup_and_install "$SRC/commands/codemap.md"          "$CLAUDE_HOME/commands/codemap.md"
-backup_and_install "$SRC/commands/memory.md"           "$CLAUDE_HOME/commands/memory.md"
 backup_and_install "$SRC/commands/memstat.md"          "$CLAUDE_HOME/commands/memstat.md"
 backup_and_install "$SRC/commands/onboard-memory.md"   "$CLAUDE_HOME/commands/onboard-memory.md"
 backup_and_install "$SRC/commands/migrate-legacy-memory.md" "$CLAUDE_HOME/commands/migrate-legacy-memory.md"
@@ -89,6 +100,7 @@ backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-s
 backup_and_install "$SRC/bin/onboard-report.sh"        "$CLAUDE_HOME/bin/onboard-report.sh"
 backup_and_install "$SRC/bin/transcript-export.sh"     "$CLAUDE_HOME/bin/transcript-export.sh"
 backup_and_install "$SRC/bin/compact-snapshot.sh"      "$CLAUDE_HOME/bin/compact-snapshot.sh"
+backup_and_install "$SRC/bin/recall.sh"                "$CLAUDE_HOME/bin/recall.sh"
 backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
 backup_and_install "$SRC/bin/vault-doctor.sh"          "$CLAUDE_HOME/bin/vault-doctor.sh"
 backup_and_install "$SRC/bin/gen-index.sh"             "$CLAUDE_HOME/bin/gen-index.sh"
@@ -118,6 +130,14 @@ done
 if [[ $DRY_RUN -eq 0 ]]; then
   chmod +x "$CLAUDE_HOME/hooks/"*.sh "$CLAUDE_HOME/bin/"*.sh \
             "$CLAUDE_HOME/bin/lib/"*.sh 2>/dev/null || true
+fi
+
+# --- Files earlier versions installed and this one no longer ships ---
+# Only OUR file is touched: it must carry our heading. Kept as .bak-<ts>.
+_obsolete="$CLAUDE_HOME/commands/memory.md"   # /memory collided with a Claude Code built-in (v6.21.0)
+if [[ -f "$_obsolete" ]] && grep -q '^# /memory — Memory' "$_obsolete" 2>/dev/null; then
+  do_or_dry "mv '$_obsolete' '$_obsolete.bak-$TS'"
+  say "  - $_obsolete (obsolete: use /memstat — moved to $_obsolete.bak-$TS)"
 fi
 say ""
 
@@ -168,6 +188,46 @@ else
     say "  ✗ Auto-merge failed. Fix manually:"
     say "    Merge 'hooks' block from $SRC/settings.snippet.json into $CLAUDE_HOME/settings.json"
   fi
+fi
+say ""
+
+# --- Native auto memory (opt-in switch) ---
+# Claude Code's own auto memory lives in the SAME directory
+# (~/.claude/projects/<slug>/memory/), loads its MEMORY.md index into every
+# session and puts its own instructions next to this protocol's. Turning it
+# off is the user's call — it also disables subagent `memory:` frontmatter.
+say "Native auto memory:"
+_native_off=0
+grep -qE '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*false' "$CLAUDE_HOME/settings.json" 2>/dev/null && _native_off=1
+[[ "${CLAUDE_CODE_DISABLE_AUTO_MEMORY:-}" == "1" ]] && _native_off=1
+if [[ $_native_off -eq 1 ]]; then
+  say "  = already off"
+elif [[ "$NATIVE_MEMORY" == "off" ]]; then
+  if [[ $DRY_RUN -eq 1 ]]; then
+    say "  [dry] set \"autoMemoryEnabled\": false in $CLAUDE_HOME/settings.json"
+  else
+    _nm_out=""; _nm_rc=0
+    case "$(_json_parser || true)" in
+      python3) _nm_out=$(python3 -c 'import json,sys; d=json.load(sys.stdin); d["autoMemoryEnabled"]=False; print(json.dumps(d, indent=2))' < "$CLAUDE_HOME/settings.json") || _nm_rc=$? ;;
+      node)    _nm_out=$(node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const d=JSON.parse(s);d.autoMemoryEnabled=false;console.log(JSON.stringify(d,null,2))})' < "$CLAUDE_HOME/settings.json") || _nm_rc=$? ;;
+      jq)      _nm_out=$(jq '.autoMemoryEnabled = false' "$CLAUDE_HOME/settings.json") || _nm_rc=$? ;;
+      *)       _nm_rc=1 ;;
+    esac
+    _nm_vrc=0
+    printf '%s' "$_nm_out" | _validate_json_stream || _nm_vrc=$?
+    if [[ $_nm_rc -eq 0 && -n "$_nm_out" && $_nm_vrc -ne 1 ]]; then
+      cp "$CLAUDE_HOME/settings.json" "$CLAUDE_HOME/settings.json.bak-$TS-native"
+      printf '%s\n' "$_nm_out" > "$CLAUDE_HOME/settings.json"
+      say "  ✓ \"autoMemoryEnabled\": false written (backup: settings.json.bak-$TS-native)"
+      say "    Takes effect in new sessions. Undo: remove the key, or set it to true."
+    else
+      say "  ✗ could not update settings.json — add  \"autoMemoryEnabled\": false  by hand"
+    fi
+  fi
+else
+  say "  ? ON — it shares projects/<slug>/memory/ with this protocol and loads its own"
+  say "    instructions beside it. To turn it off: ./install.sh --native-memory=off"
+  say "    (side effect: subagent 'memory:' frontmatter stops working). See INSTALL.md."
 fi
 say ""
 

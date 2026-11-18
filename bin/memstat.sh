@@ -19,6 +19,26 @@ export QMD_LLAMA_GPU="${QMD_LLAMA_GPU:-none}"
 WATCH=0; INTERVAL=3
 if [[ "${1:-}" == "--watch" ]]; then WATCH=1; [[ -n "${2:-}" ]] && INTERVAL="$2"; fi
 
+# --refresh: rebuild the BM25 index and the vectors NOW (replaces the former
+# `/memory refresh`). `qmd embed` is CPU-heavy — this is the only place it runs.
+if [[ "${1:-}" == "--refresh" ]]; then
+  # MEMORY_QMD_CMD overrides the qmd command (same variable as recall.sh; tests use a stub).
+  _qmd="${MEMORY_QMD_CMD:-qmd}"
+  if ! command -v "$_qmd" >/dev/null 2>&1; then
+    echo "qmd not found on PATH — nothing to refresh (see INSTALL.md). /recall still works through ripgrep."
+    exit 1
+  fi
+  mkdir -p "$CLAUDE_HOME/logs" 2>/dev/null || true
+  echo "== qmd update (BM25 index) =="
+  if "$_qmd" update 2>&1 | tee -a "$CLAUDE_HOME/logs/qmd-refresh.log" | tail -n 6; then
+    date +%s > "$CLAUDE_HOME/.qmd-last-refresh-done" 2>/dev/null || true
+  fi
+  echo ""
+  echo "== qmd embed (vectors — may take minutes on CPU) =="
+  "$_qmd" embed 2>&1 | tee -a "$CLAUDE_HOME/logs/qmd-embed.log" | tail -n 6
+  exit 0
+fi
+
 c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'
 c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_red=$'\033[31m'; c_cyn=$'\033[36m'
 
@@ -121,7 +141,19 @@ render() {
   if [[ -f "$marker" ]]; then
     local last age_r; last=$(cat "$marker" 2>/dev/null || echo 0); age_r=$((now - last))
     local due="not yet"; (( age_r > 21600 )) && due="${c_yel}due${c_reset}"
-    printf '  last refresh: %s ago      next auto: %s\n' "$(human_age "$age_r")" "$due"
+    printf '  last kick-off: %s ago      next auto: %s\n' "$(human_age "$age_r")" "$due"
+    # A kick-off without a later completion means the background block was
+    # started and never finished (killed with the hook, or crashed).
+    local done_stamp="$CLAUDE_HOME/.qmd-last-refresh-done" done_at=0
+    [[ -f "$done_stamp" ]] && done_at=$(cat "$done_stamp" 2>/dev/null || echo 0)
+    [[ "$done_at" =~ ^[0-9]+$ ]] || done_at=0
+    if (( done_at == 0 )); then
+      printf '  %slast completed: never — the background refresh has not finished once%s\n' "$c_yel" "$c_reset"
+    elif (( last - done_at > 3600 )); then
+      printf '  %slast completed: %s ago — older than the last kick-off (refresh not completing)%s\n' "$c_yel" "$(human_age $((now - done_at)))" "$c_reset"
+    else
+      printf '  last completed: %s ago\n' "$(human_age $((now - done_at)))"
+    fi
   else
     printf '  %sno refresh marker yet (will run on next session start)%s\n' "$c_dim" "$c_reset"
   fi
@@ -132,7 +164,8 @@ render() {
   for lg in qmd-refresh.log qmd-embed.log qmd-embed-retry.log; do
     local p="$CLAUDE_HOME/logs/$lg"
     [[ -f "$p" ]] || continue
-    local mt; mt=$(stat -c %Y "$p" 2>/dev/null || echo 0)
+    # GNU stat, then BSD/macOS stat.
+    local mt; mt=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p" 2>/dev/null || echo 0)
     local lastline; lastline=$(grep -vE '^\s*$|\[?\?25|^\[2K' "$p" 2>/dev/null | tail -1 | tr -d '\r' | cut -c1-58)
     printf '  %s%-22s%s %s ago  %s%s%s\n' "$c_dim" "$lg" "$c_reset" "$(human_age $((now - mt)))" "$c_dim" "$lastline" "$c_reset"
   done
@@ -146,7 +179,7 @@ render() {
     elif [[ "$pend" == "0" ]]; then
       printf '  %s✓ idle, index fully embedded%s\n' "$c_grn" "$c_reset"
     else
-      printf '  %s✓ idle (%s chunks pending — run `/memory refresh` for fresh vectors)%s\n' "$c_grn" "$pend" "$c_reset"
+      printf '  %s✓ idle (%s chunks pending — run `/memstat --refresh` for fresh vectors)%s\n' "$c_grn" "$pend" "$c_reset"
     fi
   else
     # A process is running — sample vector delta to detect progress

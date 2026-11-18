@@ -162,6 +162,55 @@ EOF
   ! grep -q 'Bash|PowerShell' "$TEST_HOME/settings.json"
 }
 
+@test "--native-memory=off writes autoMemoryEnabled:false and keeps everything else" {
+  mkdir -p "$TEST_HOME"
+  printf '{\n  "model": "keep-me",\n  "permissions": {"deny": ["Read(x)"]}\n}\n' > "$TEST_HOME/settings.json"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" --native-memory=off
+  [ "$status" -eq 0 ]
+  grep -qE '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*false' "$TEST_HOME/settings.json"
+  grep -q '"keep-me"' "$TEST_HOME/settings.json"
+  grep -q 'Read(x)' "$TEST_HOME/settings.json"
+  grep -q 'hooks/session-start.sh' "$TEST_HOME/settings.json"
+  ls "$TEST_HOME"/settings.json.bak-*-native >/dev/null
+}
+
+@test "default install leaves native auto memory alone and says how to turn it off" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'autoMemoryEnabled' "$TEST_HOME/settings.json"
+  [[ "$output" == *"--native-memory=off"* ]]
+}
+
+@test "--native-memory=off is idempotent" {
+  env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" --native-memory=off >/dev/null
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" --native-memory=off
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already off"* ]]
+}
+
+@test "unknown installer argument is rejected" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" --nonsense
+  [ "$status" -eq 2 ]
+  [ ! -f "$TEST_HOME/CLAUDE.md" ]
+}
+
+@test "upgrade removes our obsolete /memory command file, keeping a backup" {
+  mkdir -p "$TEST_HOME/commands"
+  printf '# /memory — Memory status & index refresh\nold\n' > "$TEST_HOME/commands/memory.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_HOME/commands/memory.md" ]
+  ls "$TEST_HOME"/commands/memory.md.bak-* >/dev/null
+}
+
+@test "a user's own commands/memory.md is not touched" {
+  mkdir -p "$TEST_HOME/commands"
+  printf '# my own memory command\n' > "$TEST_HOME/commands/memory.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_HOME/commands/memory.md" ]
+}
+
 @test "fresh-install settings.json contains our hook commands" {
   run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
   [ "$status" -eq 0 ]

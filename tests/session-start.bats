@@ -546,6 +546,82 @@ EOF
     "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
 }
 
+# --- background refresh block (dead until v6.21.0) ---
+
+wait_for_file() {  # $1 = path, waits up to ~15 s
+  local i
+  for i in $(seq 1 75); do
+    [[ -s "$1" ]] && return 0
+    sleep 0.2
+  done
+  return 1
+}
+
+@test "paths.sh: _augment_node_path survives set -e when a directory is missing" {
+  run bash -c "set -euo pipefail; source '$REPO_ROOT/bin/lib/paths.sh'; _augment_node_path; echo SURVIVED"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SURVIVED"* ]]
+}
+
+@test "background block runs: qmd update is called and the completion stamp is written" {
+  stub_dir="$(mktemp -d)"
+  cat > "$stub_dir/qmd" <<'EOF'
+#!/usr/bin/env bash
+echo "stub qmd $*"
+EOF
+  chmod +x "$stub_dir/qmd"
+  printf '{"source":"startup"}' > "$WORK_DIR/.in.json"
+  run bash -c "PATH='$stub_dir':\"\$PATH\" QMD_FORCE_REFRESH=1 bash '$REPO_ROOT/hooks/session-start.sh' < '$WORK_DIR/.in.json'"
+  [ "$status" -eq 0 ]
+  # The hook's own output is still clean JSON — nothing from the background leaks in.
+  json_is_valid "$output"
+  wait_for_file "$TEST_CLAUDE_HOME/.qmd-last-refresh-done"
+  grep -q '"hook":"SessionStartBg","outcome":"ok"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+  rm -rf "$stub_dir"
+}
+
+@test "background block is skipped inside the 6h debounce window" {
+  date +%s > "$TEST_CLAUDE_HOME/.qmd-last-refresh"
+  run_hook
+  [ "$status" -eq 0 ]
+  sleep 1
+  [ ! -f "$TEST_CLAUDE_HOME/.qmd-last-refresh-done" ]
+}
+
+# --- git worktrees: project.md is shared, SESSION.md is per worktree ---
+
+@test "linked worktree: project.md points at the main checkout, SESSION.md stays local" {
+  main="$WORK_DIR/main"
+  mkdir -p "$main" && cd "$main"
+  git init -q . 2>/dev/null
+  printf 'x\n' > f.txt && git add f.txt
+  git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false commit -q -m init
+  git worktree add -q "$WORK_DIR/wt" -b feature-x 2>/dev/null
+  cd "$WORK_DIR/wt"
+  source "$REPO_ROOT/bin/lib/slug.sh"
+  # Expected slug comes from the path as GIT reports it: under Git Bash the
+  # mktemp path (/tmp/…) is an alias of a Windows directory, and the hook
+  # derives the main checkout from git, exactly as it would in a real session.
+  top="$(git -C "$main" rev-parse --show-toplevel)"
+  if [[ "$top" =~ ^([A-Za-z]):/(.*)$ ]]; then top="/${BASH_REMATCH[1],,}/${BASH_REMATCH[2]}"; fi
+  _compute_slug "$top";             main_slug="$slug"
+  _compute_slug "$WORK_DIR/wt";     wt_slug="$slug"
+  run_hook
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"GIT WORKTREE"* ]]
+  [[ "$output" == *"$main_slug/memory/project.md"* ]]
+  [[ "$output" == *"$wt_slug/memory/SESSION.md"* ]]
+  cd "$main" && git worktree remove --force "$WORK_DIR/wt" 2>/dev/null || true
+}
+
+@test "main checkout: no worktree note, project.md is its own" {
+  git init -q . 2>/dev/null
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"GIT WORKTREE"* ]]
+}
+
 @test "output JSON stays valid with SESSION.md containing quotes and backslashes" {
   make_session "$PWD" <<'EOF'
 ---

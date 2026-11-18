@@ -78,6 +78,12 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] Compaction path redesign — PreCompact writes `memory/compact-snapshot.md` (last user turns verbatim + git position) and prints plain-text summary instructions; SessionStart `source=compact` re-injects SESSION.md + snapshot within the 10,000-char cap; PROTOCOL rule 5 rewritten (v6.20.0)
 - [x] `<memory-record>` frame for injected state (record of the past, not an instruction) + stripped by `transcript-export.sh` (v6.20.0)
 - [x] `doctor.sh`: non-canonical memory directory without a twin (v6.20.0)
+- [x] Background refresh block resurrected — `_add_path` returned 1 under `set -e`, so transcript export + `qmd update` never ran; completion stamp + `doctor`/`memstat` kick-off-vs-completion check (v6.21.0)
+- [x] `bin/recall.sh` — `/recall` as a tested script: qmd or ripgrep/grep fallback (qmd optional), always searches the current repo's `.claude-docs`, `--here`, inline refresh of a stale index, `logs/recall-misses.log` (v6.21.0)
+- [x] Native auto memory coexistence — `install.sh --native-memory=off`, `doctor.sh` report, INSTALL.md section (v6.21.0)
+- [x] `/memory` removed (built-in name) → `/memstat --refresh`; installer retires the old installed file (v6.21.0)
+- [x] Git worktrees share the main checkout's `project.md` (v6.21.0)
+- [x] BSD `stat` fallback in `memstat.sh` (v6.21.0)
 
 ---
 
@@ -99,21 +105,17 @@ Source: a review of this repo against the current Claude Code hooks/memory docs,
 
 **Why:** v6.20.0 is built on the documented contract and unit-tested on our side only — a session cannot trigger its own compaction, and nested `claude -p` is not an option here. Until someone looks, the gotchas entry stays `confidence: inferred`.
 
-### M/M — Coexist with Claude Code's native auto memory
+### L/S — `mcp-recall.mjs` without qmd
 
-**What:** native auto memory lives in the same `~/.claude/projects/<slug>/memory/` directory, loads its `MEMORY.md` index into every session, and its instructions arrive in the system prompt next to ours — the hook's "default memory instructions are OVERRIDDEN" line is only text. `install.sh` should offer the documented switch (`autoMemoryEnabled: false`, or `autoMemoryDirectory` to move it elsewhere) and `doctor.sh` should report which mode is active. Note the side effect: subagent `memory:` frontmatter stops working when auto memory is off.
+**What:** `search_memory` still requires qmd and does not search the current repo's docs. Give it the same behaviour as `bin/recall.sh` — either a small built-in scan, or spawning the script (needs a reliable way to find `bash` from Windows-native node).
 
-**Why:** two memory systems writing into one directory with two instruction sets; the indexer already rewrites our frontmatter (gotchas.md). Also: native memory is keyed by git root, ours by cwd — decide deliberately (worktrees: resolve `project.md` via `git rev-parse --git-common-dir`, keep SESSION.md per worktree).
+**Why:** subagents and headless runs are the callers least able to work around an empty result.
 
-### M/S — Rename `/memory`
+### L/S — Native memory is keyed by git root, ours by cwd
 
-**What:** `/memory` is a Claude Code built-in (edit CLAUDE.md files, toggle auto memory). Rename ours (e.g. `/memidx`) or ship commands under a plugin namespace.
+**What:** a session started in a subdirectory of a repo gets its own `projects/<slug>/` here, while Claude Code's native memory would use the repo root's. v6.21.0 unified `project.md` for linked worktrees only. Decide whether `project.md` should resolve to the repo root for subdirectory sessions too.
 
-### M/M — `/recall` without qmd, and over the current repo's `.claude-docs`
-
-**What:** (a) ripgrep fallback when qmd is absent (ranked by match count; same output shape). (b) Search `<repo>/.claude-docs/` of the current repo by default — today only `claude-l0` and `claude-projects` are indexed, yet the protocol routes "which doc has this gotcha?" to `/recall`. Log zero-hit queries to the outcome journal — they show what memory is missing.
-
-**Why:** the highest-leverage layer (gotchas) is the one `/recall` does not see unless the user registered a per-repo collection by hand.
+**Why:** project knowledge split by the directory a session happened to start in. Low urgency: `SESSION.md` per cwd is arguably right, and most sessions start at the root.
 
 ### M/M — Citations + verify-before-use for L1b facts
 
@@ -217,14 +219,6 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 ## Hook reliability
 
-### L/S — BSD `stat` fallback in memstat.sh
-
-**What:** `memstat.sh` uses GNU `stat -c %Y`; BSD/macOS needs `stat -f %m`. Add a runtime probe or dual-form fallback.
-
-**Why:** Windows-first project, but macOS users exist; staleness display silently shows 0 there.
-
----
-
 ### L/M — merge-settings.sh jq-only path: no sync pass
 
 **What:** python3 and node paths dedup by command and (since v6.19.0) sync matcher/hook keys of our single-hook groups. The jq-only path merges at event level: it adds missing events but neither adds our hook to an event that already exists nor migrates a matcher. Port both to jq.
@@ -237,12 +231,12 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 ### Current top queue (all H items + distillation timeline shipped v6.16.0; all 18 M-priority items shipped v6.17.0)
 
-The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review and v6.20.0 the compaction path. Next, in order:
+The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review, v6.20.0 the compaction path, v6.21.0 recall + coexistence with native memory. Next, in order:
 
-0. **Review 2026-11 section above** — compaction redesign + record framing shipped in v6.20.0 (one live `/compact` observation still owed) → next: M native-memory coexistence, `/memory` rename, `/recall` fallback → citations / `verified_at`.
+0. **Review 2026-11 section above** — shipped: compaction path (v6.20.0), recall + native-memory coexistence (v6.21.0). Still owed: one live `/compact` observation. Next: citations / `verified_at` → instruction diet + origin gate → closed-book eval → plugin packaging.
 1. **M/L — Lightweight vector search without qmd** *(deferred)* — ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
 2. **L/M — merge-settings.sh jq-only path** — no sync pass / no per-event dedup on jq-only systems.
-3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
+3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
 
 ### Legend
 

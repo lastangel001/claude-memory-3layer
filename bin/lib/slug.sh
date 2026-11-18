@@ -131,6 +131,29 @@ _resolve_project() {
   fi
 }
 
+# For a LINKED git worktree, echo the root of the MAIN worktree (in the same
+# path form `_compute_slug` accepts); echo nothing for a main checkout, a bare
+# repository or a non-repository. Used to share project.md — project-level
+# knowledge — across worktrees, while SESSION.md stays per worktree.
+_main_worktree_root() {
+  local cwd="${1:-$PWD}" common gitdir root rest
+  common=$(git -C "$cwd" rev-parse --git-common-dir 2>/dev/null) || return 0
+  gitdir=$(git -C "$cwd" rev-parse --git-dir 2>/dev/null) || return 0
+  [[ -n "$common" && "$common" != "$gitdir" ]] || return 0
+  case "$common" in
+    /*|[A-Za-z]:*) ;;
+    *) common="$cwd/$common" ;;   # relative to cwd
+  esac
+  common=${common//\\//}
+  [[ "${common##*/}" == ".git" ]] || return 0
+  root="${common%/.git}"
+  if [[ "$root" =~ ^([A-Za-z]):/(.*)$ ]]; then
+    rest=${BASH_REMATCH[2]}
+    root="/${BASH_REMATCH[1],,}/${rest}"
+  fi
+  printf '%s' "$root"
+}
+
 # Echo a path in the form the model's file tools accept on this platform:
 # /c/Users/x -> C:/Users/x under Git Bash/MSYS, unchanged elsewhere.
 _native_path() {

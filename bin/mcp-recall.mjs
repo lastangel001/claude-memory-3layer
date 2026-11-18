@@ -100,7 +100,8 @@ function searchMemory(args, done) {
   const query = String(args.query || "").trim();
   if (!query) return done(toolText("search_memory: empty query", true));
   const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(50, args.limit)) : 5;
-  const argv = ["search", query, "--md", "-k", String(limit)];
+  // `-n`, not `-k`: qmd ignores unknown flags, so `-k` silently returned the default 5.
+  const argv = ["search", query, "--md", "-n", String(limit)];
   if (args.collection) argv.push("-c", String(args.collection));
   execFile(QMD.file, [...QMD.prefix, ...argv], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err) {

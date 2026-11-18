@@ -123,9 +123,9 @@ What makes this work is the continuous-update rule: `SESSION.md` is written as t
 
 ## Tools (all local, no daemons)
 
-### `/recall <query>` — hybrid memory search
+### `/recall <query>` — memory search that works with or without qmd
 
-BM25 + GGUF embeddings + LLM rerank over all your memory files. Backed by [qmd](https://github.com/tobi/qmd) (Tobi Lütke).
+One call searches account memory (identity, every project's SESSION.md / project.md, exported transcripts) **and** the current repo's own `.claude-docs/`, `CLAUDE.md`, `AGENTS.md` — the place gotchas actually live. With [qmd](https://github.com/tobi/qmd) (Tobi Lütke) installed, memory goes through BM25 (`--hybrid` adds GGUF embeddings + rerank); without it, through ripgrep/grep with a simple ranking (files matching more query words first, curated memory before transcripts). `--here` limits memory to the current project. A stale index is refreshed inline; a query with no hits anywhere is appended to `~/.claude/logs/recall-misses.log`. Backed by `bin/recall.sh`.
 
 ```
 /recall MongoDB legacy driver
@@ -155,17 +155,13 @@ Internally uses `bin/onboard-report.sh` to collect raw data (stack files, direct
 /onboard-memory
 ```
 
-### `/memory status | refresh` — index health
-
-Shows qmd collection health and forces an index refresh. Promotion has one mode, **explicit** — cross-session memory only when the user says "remember"/"запомни" (gotchas are the single always-write exception). The `auto on|off` toggle was removed in v6.19.0: its flag file was read by no hook, and the mode contradicted the rule above.
-
 ### `/session-end` — distil & close a task
 
 Enforces the wrap-up ritual so high-signal work isn't lost at the next compact: promotes SESSION.md's durable facts to their permanent layer (gotchas / architecture / conventions / `CLAUDE.md` / IDENTITY / project.md — in-repo beats account-local), appends one `## Timeline` line to `project.md`, confirms what was promoted, then wipes SESSION.md to a clean template (keeping the `cwd:` anchor). Never commits — repo edits are proposed for you to review.
 
-### `/memstat [--watch]` — task manager for the memory subsystem
+### `/memstat [--watch|--refresh]` — status of the memory subsystem
 
-Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors embedded vs pending), refresh schedule, recent log activity, and a stall/health check. Use when `node.exe` is eating CPU and you want to know what it's doing. Backed by `bin/memstat.sh`.
+Shows running qmd/ctags processes (PID, RAM, runtime), index progress (vectors embedded vs pending), when a refresh was last kicked **and last completed**, recent log activity, and a stall/health check. `--refresh` rebuilds the BM25 index and the vectors on demand (this replaces the former `/memory refresh` — `/memory` is a Claude Code built-in, so the protocol no longer ships a command of that name). Use when `node.exe` is eating CPU and you want to know what it's doing. Backed by `bin/memstat.sh`.
 
 ```
 /memstat
@@ -197,7 +193,8 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
   - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`; CRLF-safe)
   - *Private path exclusions* — if `.claude-private` exists at the project root, reads it as a glob pattern list (one per line, `#` comments ignored) and instructs the model to treat matching paths as non-existent for all memory and capture purposes
   - *Transcript export* — exports Claude Code's own session transcripts (`.jsonl`) to searchable markdown under `memory/raw/transcripts/` (incremental, `<private>`-stripped, 30-day rolling window, opt-out via `~/.claude/.transcript-export-disabled`) — so `/recall` can quote past conversations even when nothing was written to SESSION.md
-  - Also kicks background `qmd update` debounced 6h (atomic marker — parallel sessions don't double-fire)
+  - Also kicks background `transcript-export.sh` + `qmd update`, debounced 6h (atomic marker — parallel sessions don't double-fire). The block runs with all three standard streams detached and writes `~/.claude/.qmd-last-refresh-done` when it finishes; `doctor.sh` and `/memstat` flag a kick-off that never completed
+  - *Git worktrees* — in a linked worktree `project.md` is the **main checkout's** file (project knowledge belongs to the repository); `SESSION.md` stays per worktree (it is per-task state)
 - **PreCompact** — does two things that need no model. (1) Writes `memory/compact-snapshot.md` via `bin/compact-snapshot.sh`: last 5 user turns verbatim (`<private>` stripped; skipped entirely for a `.claude-private` project) + branch / HEAD / uncommitted count. Only for projects that already keep a `SESSION.md`. (2) Prints plain-text instructions for the compaction summary — keep recent user messages, identifiers, decisions with rationale and the next step verbatim. It does **not** ask the model to flush: compaction starts as soon as the hook returns, and Claude Code discards a PreCompact hook's `systemMessage` (which is all this hook emitted before v6.20.0).
   - *After compaction* SessionStart fires with `source: compact` and inlines `SESSION.md` (up to 5,000 chars) and the snapshot (up to 2,200) in a `<memory-record>` frame. The hook context is capped at 10,000 characters, so the hook sheds in order — snapshot first, then SESSION.md — and falls back to "read these two files now" rather than let Claude Code cut the tail to a preview. `transcript-export.sh` strips the frame so injected state is never indexed as conversation.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
@@ -305,10 +302,9 @@ templates/project.md.fallback.template — L1-fallback template (account-local)
 hooks/session-start.sh          — project-dir resolution + absolute memory paths + staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — compaction checkpoint (compact-snapshot.md) + plain-text instructions for the summary
 hooks/post-tool-use.sh          — selective auto-capture: new git commits, CLAUDE.md / .claude-docs edits
-commands/recall.md              — /recall slash command (hybrid memory search)
+commands/recall.md              — /recall slash command (runs bin/recall.sh)
 commands/codemap.md             — /codemap slash command (symbol map)
-commands/memory.md              — /memory slash command (index status + refresh)
-commands/memstat.md             — /memstat slash command (memory subsystem status)
+commands/memstat.md             — /memstat slash command (memory subsystem status, --refresh)
 commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
 commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (legacy → L1-fallback synthesis)
 commands/session-end.md         — /session-end slash command (distil + wipe task ritual)
@@ -317,20 +313,21 @@ bin/doctor.sh                   — install health check (files, settings, dup h
 bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links incl. the CLAUDE.md doc index); --fix
 bin/gen-index.sh                — regenerate .claude-docs/index.md from doc frontmatter; --check for CI
 bin/uninstall.sh                — clean removal (strips only our hooks; preserves IDENTITY.md + projects/)
-bin/memstat.sh                  — memory subsystem status / task manager (backs /memstat)
+bin/memstat.sh                  — memory subsystem status / task manager + --refresh (backs /memstat)
 bin/onboard-report.sh           — collect raw repo data (stack, git log, hot files, FIXME grep) for /onboard-memory
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/mcp-recall.mjs              — zero-dep MCP server: search_memory + get_identity for subagents/headless
 bin/compact-snapshot.sh         — last user turns verbatim + git position → memory/compact-snapshot.md (called by PreCompact)
+bin/recall.sh                   — memory search: qmd or ripgrep fallback + current repo docs; misses log (backs /recall)
 bin/transcript-export.sh        — export Claude Code .jsonl transcripts → searchable markdown (SessionStart)
 bin/lib/slug.sh                 — project-directory resolver: transcript_path → formula → legacy dir (sourced by hooks, doctor, /session-end)
 bin/lib/diag.sh                 — hook outcome journal writer (debug/hook-diag.jsonl; sourced by all three hooks)
-bin/lib/paths.sh                — shared PATH augmentation for Node/npm tooling (sourced by session-start + memstat)
+bin/lib/paths.sh                — shared PATH augmentation for Node/npm tooling (sourced by session-start, memstat, recall)
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (148 cases: hooks, compaction path, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (181 cases: hooks, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements
