@@ -22,7 +22,7 @@ Pure bash (4+) plus one zero-dependency Node script. No build step, no daemon. T
 
 ## Runtime flow
 
-1. **SessionStart** (`hooks/session-start.sh`) — reads hook stdin, resolves the project directory, runs staleness / cwd-mismatch / size checks on SESSION.md, strips `<private>` blocks in place, and emits one JSON object whose `additionalContext` carries the protocol reminder plus the **absolute paths** of SESSION.md and project.md. Also kicks a debounced background `transcript-export.sh` + `qmd update`.
+1. **SessionStart** (`hooks/session-start.sh`) — reads hook stdin, resolves the project directory, runs staleness / cwd-mismatch / size checks on SESSION.md, strips `<private>` blocks in place, and emits one JSON object whose `additionalContext` carries the protocol reminder plus the **absolute paths** of SESSION.md and project.md. Also kicks a debounced background `transcript-export.sh` + `qmd update` (subshell with `set +e` and all three streams detached; writes `.qmd-last-refresh-done` on completion). In a linked git worktree, `project.md` resolves to the main checkout's project directory.
 2. **PreCompact** (`hooks/pre-compact.sh`) — calls `bin/compact-snapshot.sh` (last user turns verbatim + git position → `memory/compact-snapshot.md`) and prints plain-text instructions for the compaction summary. No JSON: Claude Code discards a PreCompact hook's `systemMessage`.
    After compaction SessionStart runs again with `source: compact` and inlines SESSION.md + the snapshot in a `<memory-record>` frame, within the 10,000-character hook-context cap (sheds the snapshot first, then falls back to a read instruction).
 3. **PostToolUse** (`hooks/post-tool-use.sh`) — appends an `[auto]` line to SESSION.md for a new git commit or an edit of `CLAUDE.md` / `.claude-docs/*.md`. Two pure-bash gates exit before any interpreter is spawned.
@@ -34,14 +34,18 @@ All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 wit
 - `slug.sh` — `_resolve_project`: which `~/.claude/projects/<slug>` belongs to this session. Order: `transcript_path` from hook stdin → formula → legacy-formula directory. **Single source of truth** — hooks, `doctor.sh` and `/session-end` all go through it.
 - `diag.sh` — `_diag hook outcome note` → `debug/hook-diag.jsonl`. Summarized by `doctor.sh`.
 - `validate-json.sh` — `_cmd_runs` / `_json_parser` (python3 → node → jq, probing that the interpreter actually executes) + JSON validation via stdin.
-- `paths.sh` — PATH augmentation for Node/npm tools under Git Bash.
+- `paths.sh` — PATH augmentation for Node/npm tools under Git Bash. Every function here must return 0: it is sourced by `set -e` scripts.
+
+## Search
+
+`commands/recall.md` only tells the model to run `bin/recall.sh` — all logic lives in the script so it can be tested. Memory section: qmd (`search` / `query`, `-n`, `-c`) when installed, otherwise ripgrep/grep ranking; `--here` always goes through ripgrep. Repo-docs section: ripgrep/grep over `<repo>/.claude-docs`, `CLAUDE.md`, `AGENTS.md`, every time. `MEMORY_QMD_CMD` overrides the qmd command (tests point it at a stub — PATH is augmented inside the script, so a stub on PATH would lose to a real install). `bin/mcp-recall.mjs` is the separate, qmd-only path for subagents.
 
 ## State under `~/.claude` (none of it in git)
 
 - `projects/<slug>/memory/{SESSION.md,project.md}` — L2 / L1-fallback; `compact-snapshot.md` — machine-written at every compaction, replaced each time; `.auto-last-commit` — sha of the last auto-captured commit; `raw/transcripts/` — exported transcripts.
 - `debug/hook-trace.log` (free text) and `debug/hook-diag.jsonl` (structured) — both rotated to 2000 lines once a day by SessionStart.
 - `.memory-version`, `.memory-source` — written by `install.sh`, read by `update.sh` and the version nudge.
-- Markers: `.qmd-last-refresh`, `.version-check`. Flags: `.session-compress-disabled`, `.transcript-export-disabled`.
+- Markers: `.qmd-last-refresh` (refresh kicked), `.qmd-last-refresh-done` (refresh finished), `.version-check`. Logs: `logs/qmd-refresh.log`, `logs/recall-misses.log`. Flags: `.session-compress-disabled`, `.transcript-export-disabled`.
 
 ## Health tooling
 

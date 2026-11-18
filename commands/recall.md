@@ -1,57 +1,36 @@
-# /recall — Hybrid search over Claude memory
+# /recall — search Claude memory
 
-Search across L0 identity, L1-fallback project notes, and L2 session memory using qmd (BM25 + GGUF embeddings + LLM rerank, all local).
+Search account memory (L0 identity, every project's SESSION.md / project.md / exported transcripts) **and** the current repo's own docs (`.claude-docs/*.md`, `CLAUDE.md`, `AGENTS.md`) in one call.
 
 ## Usage
 
-`/recall <query>` — full-text BM25 search across all memory collections. **Default mode** — fast, always works, no model loading.
-
-`/recall --hybrid <query>` — full hybrid: BM25 + vector + LLM rerank. Requires `qmd embed` to be complete; loads ~2GB of GGUF models on first call of the session. Use when BM25 misses something obviously relevant.
+`/recall <query>` — ranked search, top 5 per section.
 
 Optional flags:
-- `--here` — scope to current project's memory only (slug = the directory name in the SESSION.md path the SessionStart hook injected)
-- `-c <collection>` — scope to one collection (`claude-l0` or `claude-projects`)
-- `-k <N>` — top-N hits (default 5)
+- `--here` — only the current project's memory (plus this repo's docs)
+- `-n <N>` — hits per section (default 5; `-k` is accepted as an alias)
+- `--hybrid` — qmd hybrid search (BM25 + vectors + rerank). Needs `qmd embed` to have run; the first call of a session loads models (10–60 s). Use when plain search misses something you can only describe, not quote
+- `-c <collection>` — restrict qmd to `claude-l0` or `claude-projects`
 
 ## How to execute
 
-1. Run via Bash. PATH augmentation if qmd not on PATH:
-   ```bash
-   export PATH="/c/Program Files/nodejs:$APPDATA/npm:$PATH"  # Windows example; adjust for your npm path
-   export QMD_LLAMA_GPU=none   # Windows: Vulkan default crashes on some GPUs
-   ```
+Run the script — do not call `qmd` yourself and do not edit `PATH` (the script does both correctly for this platform):
 
-2. **BM25 default** (no `--hybrid` flag):
-   ```bash
-   qmd search "<USER_QUERY>" --md -k 5
-   ```
+```bash
+bash ~/.claude/bin/recall.sh <flags> <query words>
+```
 
-3. **Hybrid mode** (with `--hybrid`):
-   ```bash
-   qmd query "<USER_QUERY>" --rerank --md -k 5
-   ```
-   First call of the session takes 10-60s to load embedding/reranker/query-expansion models. Subsequent calls are fast.
+Display the output verbatim: do not paraphrase paths or snippets. After the hits, add one short orientation line (e.g. "the relevant note is in `billing-api/SESSION.md`").
 
-4. Scoping:
-   - `--here`: take `<slug>` from the injected SESSION.md path (`…/projects/<slug>/memory/SESSION.md`; if absent: `source ~/.claude/bin/lib/slug.sh && _resolve_project && echo "$slug"`), add `--filter "qmd://claude-projects/<slug>/**"`
-   - `-c <name>` / `-k <N>`: pass through to qmd
+## What the output means
 
-5. Display qmd's markdown output verbatim. Do NOT paraphrase paths/snippets. After hits, add one short orientation line (e.g. "looks like the relevant note is in `billing-api/SESSION.md`").
-
-6. **If hybrid mode fails** (`Error loading model` / `ErrorExtensionNotPresent`): silently fall back to `qmd search`, mention it once. Common cause: Vulkan/CUDA prebuilt mismatch on Windows.
+- `## Memory` — account memory. Engine is `qmd` (BM25, or hybrid with `--hybrid`) when qmd is installed, otherwise ripgrep/grep with literal matching — the trailer line says which. With `--here` it is always ripgrep over the one project directory.
+- `## Repo docs` — literal-match hits in the current repo's `.claude-docs/`, `CLAUDE.md`, `AGENTS.md`. This is where gotchas live; it is searched every time.
+- `(no hits)` in every section — the query was logged to `~/.claude/logs/recall-misses.log`. Tell the user memory has nothing on it; do not guess.
+- `(index was stale — refreshed before searching)` — the qmd index had not been updated for over 6 hours and was refreshed inline.
 
 ## Examples
 
-- `/recall MongoDB legacy driver` — BM25, finds the notes about the legacy `\MongoClient` adapter
-- `/recall --hybrid гочи WSL DNS` — hybrid, finds `CURLOPT_IPRESOLVE_V4` semantic-similar even without exact phrase match
-- `/recall --here retry backoff window` — scope to current project
-
-## Collections available
-
-- `claude-l0` — `~/.claude/memory/IDENTITY.md` (env-wide creds, OS, prefs)
-- `claude-projects` — all `~/.claude/projects/*/memory/*.md` (project.md, SESSION.md, gotchas, topic files)
-
-## When BM25 vs hybrid
-
-- **BM25 default is enough 80% of the time** — your memory files contain the exact terminology you're searching for ("MongoDB", "Vulkan", "Kubernetes ingress"). BM25 wins on speed + zero loading cost.
-- **Use `--hybrid`** for semantic queries where you don't remember the exact words ("that thing about DNS resolution failures", "the gotcha with timezone handling").
+- `/recall MongoDB legacy driver` — finds the notes about the legacy `\MongoClient` adapter
+- `/recall --hybrid гочи WSL DNS` — hybrid: finds `CURLOPT_IPRESOLVE_V4` without the exact phrase
+- `/recall --here retry backoff window` — current project only

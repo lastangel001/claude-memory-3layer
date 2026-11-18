@@ -256,7 +256,9 @@ QMD_LLAMA_GPU=none qmd embed   # CPU backend. Use 'cuda' or 'vulkan' if you have
 qmd collection add /path/to/repo/.claude-docs --name repo-myproject
 ```
 
-The session-start hook automatically refreshes the qmd index in background once every 6 hours (debounced). Force refresh with `/memory refresh`.
+The session-start hook refreshes the qmd BM25 index in the background at most once every 6 hours, and `/recall` refreshes it inline when the last *completed* refresh is older than that — so search never depends on the background job having survived. Force a full refresh (index + vectors) with `/memstat --refresh`.
+
+**qmd is optional.** Without it `/recall` still works: `bin/recall.sh` falls back to ripgrep (or plain grep) with literal matching, and it always searches the current repo's `.claude-docs/` either way — no per-repo collection needed.
 
 ### 2. `universal-ctags` — symbol map for the current repo (Phase 3)
 
@@ -277,17 +279,16 @@ Drop `commands/*.md` into `~/.claude/commands/`:
 ```bash
 cp <pkg>/commands/recall.md   ~/.claude/commands/recall.md
 cp <pkg>/commands/codemap.md  ~/.claude/commands/codemap.md
-cp <pkg>/commands/memory.md   ~/.claude/commands/memory.md
+cp <pkg>/commands/memstat.md  ~/.claude/commands/memstat.md
 mkdir -p ~/.claude/bin
 cp <pkg>/bin/codemap.sh       ~/.claude/bin/codemap.sh
 chmod +x ~/.claude/bin/codemap.sh
 ```
 
 You get:
-- **`/recall <query>`** — hybrid search across all memory layers (qmd-backed)
+- **`/recall <query>`** — search over account memory and the current repo's docs (qmd when installed, ripgrep otherwise)
 - **`/codemap def|callers|callees|outline <symbol>`** — on-demand symbol queries in cwd repo (ctags+ripgrep)
-- **`/memory status | refresh`** — index health + forced qmd refresh (the `auto on|off` toggle was removed in v6.19.0; a leftover `~/.claude/.memory-auto` flag file can be deleted)
-- **`/memstat [--watch]`** — "task manager" for the memory subsystem: running qmd/ctags processes, index progress (vectors vs pending), refresh schedule, and a stall/health check. Use when `node.exe` is eating CPU and you want to see what it's doing.
+- **`/memstat [--watch|--refresh]`** — "task manager" for the memory subsystem (and the manual index refresh; the former `/memory` command is gone — that name is a Claude Code built-in): running qmd/ctags processes, index progress (vectors vs pending), refresh schedule, and a stall/health check. Use when `node.exe` is eating CPU and you want to see what it's doing.
 
 ### 4. MCP server — memory for subagents and headless runs (optional)
 
@@ -320,6 +321,22 @@ Controls:
 - A project with `.claude-private` in its root is never exported
 - `<private>...</private>` blocks are stripped from exports
 - Retention: `TRANSCRIPT_KEEP_DAYS` (default 30) — older exports are deleted; size cap per file: `TRANSCRIPT_MAX_BYTES` (default 300000)
+
+## Native auto memory (Claude Code built-in)
+
+Claude Code has its own file memory. By default it lives in the **same directory** this protocol uses — `~/.claude/projects/<slug>/memory/` — keeps a `MEMORY.md` index there that is loaded into every session, and adds its own memory instructions to the system prompt. With both on you get two memory systems, two sets of instructions and one directory; the native indexer also rewrites the frontmatter of files it finds there (the hooks tolerate that — see `.claude-docs/gotchas.md`).
+
+The line "default memory instructions are OVERRIDDEN" in the SessionStart context is only text. The actual switch is a Claude Code setting, and it is yours to flip:
+
+```bash
+./install.sh --native-memory=off     # writes "autoMemoryEnabled": false to ~/.claude/settings.json (with a backup)
+```
+
+or set `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the environment. `bash ~/.claude/bin/doctor.sh` reports the current state.
+
+What turning it off changes: Claude Code stops reading and writing `MEMORY.md`; **subagent `memory:` frontmatter stops working** (it depends on the same switch); nothing is deleted. To undo, remove the key or set it to `true`. The installer never changes this setting unless you pass the flag, and `uninstall.sh` leaves it as it is.
+
+If you keep native memory on, the two coexist — but expect a `MEMORY.md` next to your `SESSION.md`, and treat anything the native system wrote as outside this protocol's promotion rules.
 
 ## Growing the knowledge store (flat + tags + prefixes)
 
@@ -407,6 +424,7 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 
 - **Hooks don't fire.** Check `~/.claude/debug/hook-trace.log` after starting a session. Empty? `settings.json` malformed (`python -m json.tool < ~/.claude/settings.json`) or path wrong. Use `~/` not `$HOME` in the JSON — Claude Code expands tilde.
 - **macOS: `date: illegal option -- d`.** You're using BSD `date`. `brew install coreutils` and either prepend its bin to PATH or replace `date -d` with `gdate -d` in `session-start.sh`.
+- **`/recall` returns stale results or nothing.** Run `bash ~/.claude/bin/doctor.sh` → *Index refresh*. "kicked but none has ever completed" means the background refresh is not finishing on this machine; `bash ~/.claude/bin/memstat.sh --refresh` rebuilds the index now, and `/recall` self-heals a stale index on its next run. Queries that found nothing are listed in `~/.claude/logs/recall-misses.log`.
 - **Memory "disappeared" / two directories for one project.** Run `bash ~/.claude/bin/doctor.sh` and look at *Memory directories*. A twin is a directory named by an older slug formula or by a slug the model derived by hand (e.g. `C--dev-my_app` next to the real `C--dev-my-app`); it has a `memory/` folder but no `.jsonl` transcripts. Move its files into the real directory — when both hold a `SESSION.md`, compare them first. Until you do, hooks keep reading a legacy-formula directory if it is the only one with a `SESSION.md`.
 - **A hook feature quietly stopped working.** `doctor.sh` → *Hook outcomes* summarizes `~/.claude/debug/hook-diag.jsonl`; any `degraded` / `failed` line names what fell back.
 - **Staleness warning never fires.** Model didn't refresh `last_updated` on previous writes. The "no marker" branch will fire instead, which is the intended fallback.

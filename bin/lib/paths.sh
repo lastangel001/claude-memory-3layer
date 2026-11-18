@@ -10,7 +10,11 @@ _add_path() {
   local p="$1"
   p="${p//\\//}"  # backslashes -> forward slashes
   [[ "$p" =~ ^([A-Za-z]):(.*)$ ]] && p="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"  # C:/x -> /c/x
-  [[ -d "$p" ]] && PATH="$p:$PATH"
+  # `[[ -d … ]] && PATH=…` as the LAST statement returns 1 for a missing
+  # directory. Under `set -e` that aborted every caller on the first path that
+  # does not exist on this OS — which is always some of them (see gotchas.md).
+  if [[ -d "$p" ]]; then PATH="$p:$PATH"; fi
+  return 0
 }
 
 _augment_node_path() {

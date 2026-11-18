@@ -125,6 +125,44 @@ JSEOF
   [[ "$output" != *"PreCompact failed"* ]]
 }
 
+@test "doctor: native auto memory ON is reported with the way to turn it off" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Native auto memory"* ]]
+  [[ "$output" == *"--native-memory=off"* ]]
+}
+
+@test "doctor: native auto memory off is recognised (setting or env var)" {
+  env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" --native-memory=off >/dev/null 2>&1
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"off — this protocol is the only memory system"* ]]
+  rm -f "$TEST_HOME/settings.json" && env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh" >/dev/null 2>&1
+  run env CLAUDE_HOME="$TEST_HOME" CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"off — this protocol is the only memory system"* ]]
+}
+
+@test "doctor: a refresh that was kicked but never completed is flagged" {
+  date +%s > "$TEST_HOME/.qmd-last-refresh"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"none has ever completed"* ]]
+}
+
+@test "doctor: a completed refresh is reported as healthy" {
+  date +%s > "$TEST_HOME/.qmd-last-refresh"
+  date +%s > "$TEST_HOME/.qmd-last-refresh-done"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"Background refresh completes"* ]]
+}
+
+@test "doctor: a recall miss is information, not a degraded outcome" {
+  printf '{"ts":"%s","hook":"Recall","outcome":"empty","note":"scope=all-projects"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "$TEST_HOME/debug/hook-diag.jsonl"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"Recall empty"* ]]
+  [[ "$output" != *"degraded/failed outcomes above"* ]]
+}
+
 @test "doctor: broken runtime copy fails the self-test" {
   # Corrupt the installed session-start.sh so it exits non-zero.
   printf '\nexit 3\n' >> "$TEST_HOME/hooks/session-start.sh"

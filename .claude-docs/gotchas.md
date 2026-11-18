@@ -255,3 +255,37 @@ confidence: verified
 **Fix:** one directive directly above each command that first references a variable set by a sourced library.
 
 **Lesson:** shellcheck is not installed on the dev machine, so this class only surfaces in CI — open a PR rather than pushing to `main`, and read the ubuntu job first: a failure there in seconds means lint, not tests.
+
+## A sourced helper that returns 1 killed the background refresh for months
+
+confidence: verified
+
+**Symptom:** on a long-lived install the qmd index was months old and held a small fraction of the memory files; no transcript had ever been exported; `~/.claude/logs/` was empty. No error anywhere, and `.qmd-last-refresh` looked fresh.
+
+**Cause:** the SessionStart background block is a subshell of a `set -euo pipefail` script. Its first real line called `_augment_node_path`, whose helper ended with `[[ -d "$p" ]] && PATH="$p:$PATH"` — status 1 for a directory that does not exist. The list of candidate directories mixes Windows, Linux and Homebrew paths, so on **every** machine some are missing: errexit ended the subshell before the transcript export and before `qmd update`. The kick-off marker is written *before* the block is spawned, so from outside it looked like the refresh ran. (Same root as the bats-teardown gotcha above; `memstat.sh` sources the same file without `set -e` and never noticed.)
+
+**Fix (v6.21.0):** `_add_path` returns 0 explicitly; the block starts with `set +e` and `trap - ERR` (it is best-effort — errexit has no business there); it writes `.qmd-last-refresh-done` at the end and a `SessionStartBg` line to the outcome journal. `doctor.sh` and `/memstat` compare kick-off and completion. `tests/session-start.bats` runs the block against a qmd stub and waits for the stamp.
+
+**Lesson:** (1) a function in a sourced library must end with an explicit `return 0` unless its status is its contract. (2) A "started" marker proves nothing — record completion, and have the health check compare the two. (3) Anything a hook runs in the background needs a test that waits for its effect; "the hook exited 0" does not cover it.
+
+## A background child of a hook must let go of stdout
+
+confidence: inferred
+
+The background block ends with `) </dev/null >/dev/null 2>&1 &`. A child that keeps the hook's stdout open can keep the harness waiting for EOF on the hook's output, or interleave its own output with the JSON. This could not be observed before v6.21.0 — the block never got far enough to matter — so the redirection is defensive: measured after the fix, the hook returns in about a second while the refresh continues.
+
+## Command docs drifted from the tool they drive
+
+confidence: verified
+
+`commands/recall.md` told the model to run `qmd search … -k 5` (qmd's flag is `-n`; unknown flags are silently ignored, so the limit never applied), `--filter "qmd://…"` for `--here` (no such flag — the scope was never applied), and to `export PATH="…:$APPDATA/npm:$PATH"` first (on Git Bash `$APPDATA` is a backslash path; the export made qmd's shim resolve its own module to a non-existent location and every search failed). `bin/mcp-recall.mjs` carried the same `-k`.
+
+**Fix (v6.21.0):** the command file now only says "run `bin/recall.sh`"; flags and PATH handling live in the script, covered by `tests/recall.bats` through a qmd stub that records its arguments.
+
+**Lesson:** a prompt file that spells out another tool's CLI is untested code. Put the invocation in a script with a test, and keep the prompt file to "run this, show the output".
+
+## Under Git Bash, `/tmp` is an alias — git answers with the Windows path
+
+confidence: verified
+
+In bats on Windows `mktemp -d` gives `/tmp/tmp.X`, but `git rev-parse --show-toplevel` / `--git-common-dir` inside it return `C:/Users/…/AppData/Local/Temp/tmp.X`. A test that computes an expected slug from `$PWD` and compares it with one the code derived from git output fails on Windows only. Derive both sides from the same source (ask git in the test too). Real sessions are unaffected: there the cwd is a `/c/…` path and both forms name the same directory.

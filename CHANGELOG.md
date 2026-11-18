@@ -1,5 +1,32 @@
 # Changelog
 
+## v6.21.0 — 2026-11-18 — recall that works, and living next to native memory
+
+**Fixed**
+- **The background index refresh and the transcript export never ran.** The SessionStart background block is a subshell of a `set -e` script; its first line called a PATH helper that returned 1 for any directory missing on the current OS — which is always some of them — so the block died before `transcript-export.sh` and before `qmd update`. The kick-off marker was written anyway. On a long-lived install the index turned out to be months old and to hold a small fraction of the memory files, and no transcript had ever been exported. `_add_path` now returns 0; the block runs with `set +e`, detaches all three standard streams, records completion in `~/.claude/.qmd-last-refresh-done` and writes a `SessionStartBg` line to the outcome journal. Verified live: the first run after the fix re-indexed the whole memory store and the hook still returned in about a second.
+- **`/recall` used flags qmd does not have.** `-k` (the real flag is `-n`; unknown flags are ignored, so the limit never applied — also in `bin/mcp-recall.mjs`), and `--filter` for `--here` (does not exist). The PATH export the command file prescribed broke qmd outright on Git Bash (`$APPDATA` is a backslash path).
+- **`/recall` never searched the current repo's `.claude-docs/`** unless a per-repo qmd collection had been registered by hand — yet the protocol sends "which doc has this gotcha?" to `/recall`.
+
+**Added**
+- **`bin/recall.sh`** — the whole of `/recall`, as a tested script. Memory section through qmd when installed (BM25, `--hybrid`, `-c`), otherwise through ripgrep or plain grep with a ranking (files matching more query words first; curated memory before verbatim transcripts). Repo-docs section — `.claude-docs/`, `CLAUDE.md`, `AGENTS.md` — every time. `--here` scopes memory to the current project. A stale index (last completed refresh older than 6 h) is refreshed inline. **qmd is now optional.**
+- **`logs/recall-misses.log`** — every query that found nothing anywhere: what memory was asked for and did not have. Also journaled as `Recall empty` (shown by `doctor.sh` as information, not as a fault).
+- **`./install.sh --native-memory=off`** — writes `"autoMemoryEnabled": false` to `settings.json` (backup kept). Claude Code's built-in auto memory shares `projects/<slug>/memory/` with this protocol and loads its own index and instructions; the installer never touches the switch without the flag, and prints the state either way. New INSTALL.md section explains the trade-off (subagent `memory:` stops working when it is off).
+- **`doctor.sh`**: *Index refresh* (a kick-off that never completed) and *Native auto memory* (on/off) sections.
+- **`/memstat --refresh`** — rebuilds the BM25 index and the vectors; REFRESH now shows kick-off *and* completion.
+- **Git worktrees**: in a linked worktree `project.md` resolves to the main checkout's project directory (project knowledge belongs to the repository); `SESSION.md` stays per worktree.
+- Tests: 148 → 181. New `tests/recall.bats` and `tests/memstat.bats`; the background block is tested against a qmd stub, waiting for its completion stamp.
+
+**Removed**
+- **`/memory` command.** The name is a Claude Code built-in (edit CLAUDE.md files, toggle native auto memory). Its remaining job — index refresh — moved to `/memstat --refresh`. On upgrade the installer moves our old `~/.claude/commands/memory.md` to a `.bak-<timestamp>` file (only if it carries our heading; a user's own file of that name is left alone).
+
+**Changed**
+- `memstat.sh`: BSD/macOS `stat` fallback for log ages. `commands/memstat.md` no longer describes one particular machine's GPU.
+- Unknown `install.sh` arguments are rejected (exit 2) instead of ignored.
+
+**Upgrade notes**
+- `bash ~/.claude/bin/update.sh`, then `bash ~/.claude/bin/doctor.sh`. The first session start (or the first `/recall`) after upgrading rebuilds the index; expect one slower call.
+- Transcript export now actually runs: `memory/raw/transcripts/` will start filling (30-day rolling window; opt out with `touch ~/.claude/.transcript-export-disabled`).
+
 ## v6.20.0 — 2026-11-18 — compaction path: deterministic checkpoint + re-injection
 
 The compaction story in the README described a sequence Claude Code does not provide. This release replaces it with one that needs no cooperation from the model.

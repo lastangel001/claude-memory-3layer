@@ -312,7 +312,7 @@ else
     || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
   # Fixed line shape: {"ts":"…","hook":"…","outcome":"…","note":"…"} → split on '"'.
   _summary=$(awk -F'"' -v cut="$_cut" '
-    $4 >= cut { n[$8 " " $12]++; if ($12 != "ok") note[$8 " " $12 " " $16]++ }
+    $4 >= cut { n[$8 " " $12]++; if ($12 == "degraded" || $12 == "failed") note[$8 " " $12 " " $16]++ }
     END {
       for (k in n) printf "S %s %d\n", k, n[k]
       for (k in note) printf "N %s (x%d)\n", k, note[k]
@@ -321,13 +321,48 @@ else
   while IFS= read -r _l; do
     [[ -z "$_l" ]] && continue
     case "$_l" in
-      "S "*" ok "*) ok "${_l#S }" ;;
+      "S "*" ok "*|"S "*" empty "*) ok "${_l#S }" ;;
       "S "*)        warn "${_l#S }"; _bad=1 ;;
       "N "*)        warn "  ${_l#N }" ;;
     esac
   done <<< "$_summary"
   [[ -z "$_summary" ]] && ok "No hook outcomes in the last 7 days"
   [[ $_bad -eq 1 ]] && warn "degraded/failed outcomes above: a hook feature fell back silently — see ~/.claude/debug/hook-trace.log"
+fi
+say ""
+
+# ─────────────────────────────────────────────
+# 4d. Index refresh completion
+# ─────────────────────────────────────────────
+# SessionStart writes .qmd-last-refresh when it KICKS a background refresh and
+# .qmd-last-refresh-done when the refresh FINISHES. A kick-off with no later
+# completion is how "the background block never runs" looks from outside
+# (that went unnoticed for months before v6.21.0).
+say "Index refresh:"
+_kick=$(cat "$CLAUDE_HOME/.qmd-last-refresh" 2>/dev/null || echo "")
+_done=$(cat "$CLAUDE_HOME/.qmd-last-refresh-done" 2>/dev/null || echo "")
+[[ "$_kick" =~ ^[0-9]+$ ]] || _kick=0
+[[ "$_done" =~ ^[0-9]+$ ]] || _done=0
+if [[ $_kick -eq 0 ]]; then
+  ok "No refresh kicked yet (runs on a session start, at most every 6h)"
+elif [[ $_done -eq 0 ]]; then
+  warn "A background refresh was kicked but none has ever completed — see ~/.claude/logs/qmd-refresh.log; run: bash ~/.claude/bin/memstat.sh --refresh"
+elif [[ $((_kick - _done)) -gt 3600 ]]; then
+  warn "Last completed refresh is older than the last kick-off by $(( (_kick - _done) / 3600 ))h — the background refresh is not finishing"
+else
+  ok "Background refresh completes (last: $(( ($(date +%s) - _done) / 3600 ))h ago)"
+fi
+say ""
+
+# ─────────────────────────────────────────────
+# 4e. Native auto memory
+# ─────────────────────────────────────────────
+say "Native auto memory (Claude Code built-in):"
+if grep -qE '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*false' "$CLAUDE_HOME/settings.json" 2>/dev/null \
+   || [[ "${CLAUDE_CODE_DISABLE_AUTO_MEMORY:-}" == "1" ]]; then
+  ok "off — this protocol is the only memory system"
+else
+  warn "ON — it writes MEMORY.md into the same projects/<slug>/memory/ directory and its instructions load beside the protocol. To turn it off: install.sh --native-memory=off (see INSTALL.md)"
 fi
 say ""
 
