@@ -106,6 +106,8 @@ Context fills mid-task and auto-compact starts — the model gets no turn, so it
 1. **PreCompact hook** writes `memory/compact-snapshot.md` — the last user turns *verbatim* and the git position — and hands the summarizer instructions on what to keep verbatim (its stdout is the only channel Claude Code offers a PreCompact hook).
 2. **SessionStart hook** runs again after compaction and re-injects `SESSION.md` plus that snapshot, wrapped in a `<memory-record>` block that says what it is: a record of past work to verify against the code, not a new instruction.
 
+Observed end to end on a manual `/compact` (the summary ends with the working-state line the hook asked for, and the `<memory-record>` arrives right after it). One caveat found the same way: when Claude Code compacts an *idle* session in the background, only step 1 runs — the session then falls back to the standing "read SESSION.md first" instruction.
+
 What makes this work is the continuous-update rule: `SESSION.md` is written as the work proceeds, so it is already current when compaction hits. Resume is the same branch, the same next step, the same rationale.
 
 ---

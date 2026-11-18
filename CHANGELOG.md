@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.23.2 — 2026-11-18 — docs: the manual compaction path, observed end to end
+
+No code change.
+
+**Changed**
+- **gotchas.md**: a manual `/compact` on v6.23.x ran the whole chain as designed — `PreCompact ok snapshot=ok turns=5 trigger=manual`; the summary ended with the working-state line the hook's stdout had asked for (plain stdout does reach the summarizer); `SessionStart … source=compact inject=session snapshot=yes` two seconds later, with the `<memory-record>` block placed after the summary, complete and inline. The compaction entries move from `inferred` to `verified` for everything that was seen.
+- The one gap is now stated precisely: after an **idle** auto-compaction only the snapshot step runs — no SessionStart `source: compact` follows. README says so; IDEAS.md carries it as the remaining open item.
+- `.claude-docs/eval-questions.md`: one more question, so the idle-path caveat stays findable.
+
 ## v6.23.1 — 2026-11-18 — docs: what a live auto-compaction showed
 
 No code change.
