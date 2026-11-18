@@ -179,7 +179,7 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 ### Health & maintenance
 
 - **`bin/doctor.sh`** — checks the *install*: hook files + syntax, `settings.json` validity, duplicate/registered hooks, CRLF contamination, a dynamic self-test that runs the installed hooks in a throwaway home, optional tools, and the active JSON parser.
-- **`bin/vault-doctor.sh`** — checks the *content*: IDENTITY.md over its 25-line cap, oversize/stale SESSION.md files, transcript retention, and (inside a repo) `.claude-docs/` missing frontmatter, orphaned docs, broken links. `--fix` wipes stale sessions to a clean template. `--stale-days N` tunes the threshold.
+- **`bin/vault-doctor.sh`** — checks the *content*: IDENTITY.md over its 25-line cap, oversize/stale SESSION.md files, transcript retention, and (inside a repo) `.claude-docs/` missing frontmatter, orphaned docs, broken links. `--fix` wipes stale sessions to a clean template. `--stale-days N` tunes the threshold. Also checks **citations**: a fact may carry `src: path#symbol @ <sha>`, and the doctor warns when the file or symbol is gone or the file changed in 5+ commits since — staleness measured in commits, not days; a flag means re-verify, never delete. And an **L1a diet** check: a `CLAUDE.md` over 200 lines, or one repeating long lines of the README, is flagged — it loads into every session.
 - **`bin/gen-index.sh`** — regenerates `.claude-docs/index.md` from each doc's `description:` frontmatter, preserving a hand-written MANUAL block. `--check` fails when the index is out of date (wire it into your project's CI).
 - **`bin/uninstall.sh`** — removes everything cleanly, strips only our hooks from `settings.json` (foreign hooks kept), and never touches `IDENTITY.md` or `projects/`. `--dry-run` to preview, `--yes` to skip the prompt. See INSTALL.md → Uninstall.
 
@@ -310,7 +310,7 @@ commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (lega
 commands/session-end.md         — /session-end slash command (distil + wipe task ritual)
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
 bin/doctor.sh                   — install health check (files, settings, dup hooks, CRLF, dynamic self-test, split memory dirs, hook outcomes)
-bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links incl. the CLAUDE.md doc index); --fix
+bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links incl. the CLAUDE.md doc index, `src:` citations, CLAUDE.md diet); --fix
 bin/gen-index.sh                — regenerate .claude-docs/index.md from doc frontmatter; --check for CI
 bin/uninstall.sh                — clean removal (strips only our hooks; preserves IDENTITY.md + projects/)
 bin/memstat.sh                  — memory subsystem status / task manager + --refresh (backs /memstat)
@@ -327,7 +327,7 @@ bin/lib/paths.sh                — shared PATH augmentation for Node/npm toolin
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (181 cases: hooks, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (191 cases: hooks, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements

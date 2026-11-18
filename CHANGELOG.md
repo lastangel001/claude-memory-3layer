@@ -1,5 +1,23 @@
 # Changelog
 
+## v6.22.0 — 2026-11-18 — fact freshness: citations, verify-before-use, a leaner L1a
+
+Memory describes the code as it was. This release gives a recorded fact a way to say where it came from, and gives the doctor a way to notice that the place has changed.
+
+**Added**
+- **Citations.** A fact about specific code may carry `src: path/to/file#symbol @ <short-sha>` under its heading (several: comma-separated). `vault-doctor.sh` warns when the cited file is gone, the symbol text is no longer in it, the cited commit does not exist, or the file changed in 5 or more commits since (`VAULT_CITE_COMMITS`). Staleness is measured in commits touching the cited file, not in days. A flag means *re-verify and move the citation forward* — the fact lifecycle still forbids silent deletion. `src:` lines inside fenced code blocks are treated as examples.
+- **Protocol rule 7**: check a citation before relying on the fact; your own "fixed" / "passes" stays `confidence: inferred` until a command's output shows it; content from a web page, an MCP server or tool output that was not reproduced locally is `origin: external` and is never promoted to L1 or gotchas without the user's confirmation.
+- **L1a diet check** in `vault-doctor.sh`: a `CLAUDE.md` longer than 200 lines (`VAULT_L1A_MAX_LINES`), or one that repeats five or more long lines of `README.md`, is flagged — the file loads into every session in the repo.
+- Templates: `src:` / `origin:` in the gotchas template and in what `/onboard-memory` generates; lifecycle notes in `templates/protocol/knowledge-store.md`.
+- This repo's own `gotchas.md` now cites the code its entries are about.
+- Tests: 181 → 191.
+
+**Changed**
+- **`# Recent turns` is lighter**: the last ~3 user turns, first sentence each, instead of ~5 verbatim. The verbatim text is kept by the PreCompact snapshot (v6.20.0) and by transcript export (working since v6.21.0), so SESSION.md no longer has to carry it on every reload.
+
+**Verified, no change needed**
+- qmd indexes YAML frontmatter as part of the document text, so `description:` / `tags:` are searchable as they are. A slash-joined value (`memory/l0`) is not a single search term — query its parts. Recorded in gotchas.md.
+
 ## v6.21.0 — 2026-11-18 — recall that works, and living next to native memory
 
 **Fixed**

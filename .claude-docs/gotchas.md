@@ -141,6 +141,7 @@ Test matrix (`tests/session-start.bats`): both `cwd:` **and** `last_updated:` ar
 ## Project slug: never let the model derive it, never trust a hand-written formula
 
 confidence: verified
+src: bin/lib/slug.sh#_resolve_project @ abbb81b
 
 **Symptom:** two memory directories for one project — e.g. `C--dev-my-app` (holds the `.jsonl` transcripts) and `C--dev-my_app` (holds a SESSION.md, no transcripts). Hooks read one, the model wrote the other; staleness / cwd / size checks and auto-capture silently see nothing.
 
@@ -175,6 +176,7 @@ confidence: verified
 ## `grep -P` in a hook: fails on the hook's locale, and the fallback hid it
 
 confidence: verified
+src: hooks/post-tool-use.sh#_commit_re @ abbb81b
 
 **Symptom:** every auto-captured commit line read `git commit: (see git log)` — the commit message was never captured, on any commit.
 
@@ -187,6 +189,7 @@ confidence: verified
 ## `merge-settings.sh` dedups by command — a changed matcher never reaches existing installs
 
 confidence: verified
+src: bin/merge-settings.sh#sync_group @ abbb81b
 
 **Symptom:** `settings.snippet.json` changes the PostToolUse matcher; fresh installs get it, upgraded installs keep `"*"` forever. `install.sh` even reported "all hooks present".
 
@@ -211,6 +214,7 @@ Claude Code refuses a `Write` to a file that changed since the model last read i
 ## PreCompact cannot make the model flush — and its JSON output is thrown away
 
 confidence: inferred
+src: hooks/pre-compact.sh#compact-snapshot.sh @ abbb81b
 
 (Source: the Claude Code hooks reference, which states each point below explicitly. Not observed in a live compaction — a session cannot trigger its own. Our side of the contract is covered by `tests/pre-compact.bats`.)
 
@@ -225,6 +229,7 @@ confidence: inferred
 ## Hook context is capped at 10,000 characters — and the overflow is a preview, not an error
 
 confidence: inferred (the cap and the spill behaviour — from the hooks reference) · verified (the two traps below — reproduced in tests)
+src: hooks/session-start.sh#_CONTEXT_CAP @ abbb81b
 
 A hook's `additionalContext` (and plain stdout) is capped at 10,000 characters *per string*. Above it Claude Code saves the text to a file and gives the model the path plus the first 2,000 characters — and does **not** ask the model to read the file. So an oversized SessionStart context silently loses its tail, which is exactly where re-injected state sits.
 
@@ -259,6 +264,7 @@ confidence: verified
 ## A sourced helper that returns 1 killed the background refresh for months
 
 confidence: verified
+src: bin/lib/paths.sh#_add_path @ abbb81b, hooks/session-start.sh#.qmd-last-refresh-done @ abbb81b
 
 **Symptom:** on a long-lived install the qmd index was months old and held a small fraction of the memory files; no transcript had ever been exported; `~/.claude/logs/` was empty. No error anywhere, and `.qmd-last-refresh` looked fresh.
 
@@ -277,6 +283,7 @@ The background block ends with `) </dev/null >/dev/null 2>&1 &`. A child that ke
 ## Command docs drifted from the tool they drive
 
 confidence: verified
+src: bin/recall.sh#MEMORY_QMD_CMD @ abbb81b
 
 `commands/recall.md` told the model to run `qmd search … -k 5` (qmd's flag is `-n`; unknown flags are silently ignored, so the limit never applied), `--filter "qmd://…"` for `--here` (no such flag — the scope was never applied), and to `export PATH="…:$APPDATA/npm:$PATH"` first (on Git Bash `$APPDATA` is a backslash path; the export made qmd's shim resolve its own module to a non-existent location and every search failed). `bin/mcp-recall.mjs` carried the same `-k`.
 
@@ -289,3 +296,15 @@ confidence: verified
 confidence: verified
 
 In bats on Windows `mktemp -d` gives `/tmp/tmp.X`, but `git rev-parse --show-toplevel` / `--git-common-dir` inside it return `C:/Users/…/AppData/Local/Temp/tmp.X`. A test that computes an expected slug from `$PWD` and compares it with one the code derived from git output fails on Windows only. Derive both sides from the same source (ask git in the test too). Real sessions are unaffected: there the cwd is a `/c/…` path and both forms name the same directory.
+
+## qmd indexes frontmatter as plain text — but a value with `/` is not one term
+
+confidence: verified
+
+`qmd get` shows the YAML frontmatter as part of the stored document, and a BM25 search for words from it (`tags identity`) returns the frontmatter line. So `description:`, `tags:` and names kept only in frontmatter are searchable — no need to copy them into the body. What does **not** work is searching for a slash-joined value as a single token: `memory/l0` finds nothing, while `memory l0` does. Query the parts.
+
+## Citations: cite a commit that will still exist
+
+confidence: verified
+
+`src: path#symbol @ <sha>` is checked by `vault-doctor.sh` with `git cat-file` and `git rev-list <sha>..HEAD -- path`. This repo squash-merges: a feature-branch commit is gone from `main`'s history after the merge, and once the branch is deleted the sha may not resolve at all — the doctor then reports "cited commit … is not in this repository". Cite the merge commit on the main branch (or cite after merging). Cite a symbol, not a line number: line numbers move with every edit, a function name moves only when the fact probably changed too.

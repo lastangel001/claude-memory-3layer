@@ -27,4 +27,7 @@ When splitting: keep `project.md` (or `CLAUDE.md`) as the **thin entry + doc ind
 - Top of file/entry = **current truth**. Never silently delete or rewrite.
 - Outdated fact → `status: superseded` (frontmatter or inline) + dated line in append-only `## History`: `- 2026-03→06: was X`.
 - `confidence: verified` — confirmed by running/reproducing. `confidence: inferred` — deduced from reading code/docs. Assert verified facts; hedge inferred ones.
+- `src: path#symbol @ <short-sha>` — where in the code a fact was established (optional; cite a symbol, not a line number; a commit on the main branch, since squash merges drop branch commits). `bash ~/.claude/bin/vault-doctor.sh` flags a citation whose file or symbol is gone, or whose file changed in 5+ commits since (`VAULT_CITE_COMMITS`). A flag means *re-verify and move the citation forward* — or supersede the fact; it never means delete.
+- Before relying on a cited fact, open the citation. Memory describes the code as it was; the code is the authority.
+- `origin: external` — learned from a web page, an MCP server or tool output and not reproduced locally. Such content is recorded only with the user's confirmation, and never as `confidence: verified`.
 - Answering about the past ("how did this work before") → History is fair game; otherwise answer from current truth only.

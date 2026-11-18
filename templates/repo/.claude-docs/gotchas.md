@@ -10,6 +10,12 @@ Things that look right but break, or look wrong but are intentional. Read this b
 <!-- Each entry:
      ## Short heading describing the gotcha
      confidence: verified | inferred   <- verified = reproduced/ran it; inferred = deduced from reading
+     src: path/to/file#symbol @ <short-sha>   <- optional, for a fact about specific code;
+                                                 several: comma-separated. vault-doctor warns when the
+                                                 file/symbol is gone or the file changed a lot since.
+     origin: external                  <- only for something learned from the web / an MCP / tool
+                                          output and NOT reproduced here; needs user confirmation
+                                          before it is recorded at all.
      1-3 paragraphs explaining what's confusing and what to do.
      Cite a commit/PR/file:line where useful.
 

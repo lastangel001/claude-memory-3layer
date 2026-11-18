@@ -84,6 +84,11 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] `/memory` removed (built-in name) → `/memstat --refresh`; installer retires the old installed file (v6.21.0)
 - [x] Git worktrees share the main checkout's `project.md` (v6.21.0)
 - [x] BSD `stat` fallback in `memstat.sh` (v6.21.0)
+- [x] Citations + verify-before-use — `src: path#symbol @ sha`, `vault-doctor.sh` checks (file / symbol / commits since), protocol rule 7 (v6.22.0)
+- [x] Origin gate — `origin: external` content is not promoted without the user's confirmation; an agent's own "fixed" stays `inferred` until command output shows it (v6.22.0)
+- [x] Instruction diet — `vault-doctor.sh` flags an over-long `CLAUDE.md` and README prose copied into it (v6.22.0)
+- [x] `# Recent turns` trimmed to ~3 first-sentence entries — verbatim text lives in the PreCompact snapshot and transcript export (v6.22.0)
+- [x] Verified: qmd indexes frontmatter as text (slash-joined values are not single terms) — no change needed (v6.22.0)
 
 ---
 
@@ -117,23 +122,11 @@ Source: a review of this repo against the current Claude Code hooks/memory docs,
 
 **Why:** project knowledge split by the directory a session happened to start in. Low urgency: `SESSION.md` per cwd is arguably right, and most sessions start at the root.
 
-### M/M — Citations + verify-before-use for L1b facts
-
-**What:** a fact may carry `src: path#symbol @ <sha>`; `vault-doctor` checks via ctags/ripgrep that cited paths/symbols still exist and lists docs whose cited files changed in the last N commits (`verified_at: <sha>` in frontmatter). Flag only — never delete. Protocol rule: check the citation before asserting the fact. Companion write rule from hindsight: an agent's "fixed"/"passes" is `confidence: inferred` until a command output is cited.
-
-**Why:** GitHub's write-up of Copilot's agentic memory reports citations checked before use as the staleness mitigation, with a measured rise in PR merge rate. Staleness measured in commits beats staleness measured in days.
-
-**Tradeoff:** authoring friction — cite symbols, not line numbers; keep it optional per fact.
-
 ### M/L — Closed-book memory eval
 
 **What:** N canned questions per repo, answered by a subagent that may read only the memory files; grep-able answers. First target: does caveman compression of SESSION.md/project.md lose answers?
 
 **Why:** nothing in this repo measures whether the memory actually carries what a fresh agent needs. One survey data point: a compressed dialect cost another system a large recall drop.
-
-### L/S — Instruction diet + origin gate
-
-**What:** `vault-doctor` lint for L1a overview prose that duplicates README (an ETH study found LLM-generated instruction files slightly *reduce* task success while raising cost — relevant to what `/onboard-memory` generates). And an `origin: user|reproduced|inferred|external` tag: content that came from web/MCP output never reaches L1 or gotchas without user confirmation.
 
 ### L/M — Ship as a Claude Code plugin
 
@@ -179,22 +172,6 @@ Source: a review of this repo against the current Claude Code hooks/memory docs,
 
 Source: comparative analysis against [smixs/iva](https://github.com/smixs/iva) (willow-tree memory: verbatim daily transcripts → rollup summaries → always-on CORE.md + typed cards). The H-priority items from this section (fact lifecycle, protocol slimming, transcript indexing) + distillation timeline shipped in v6.16.0; the mechanical-hygiene items (vault-doctor, index.md auto-generation, duplicate-hook check) shipped in v6.17.0 — see "Already shipped". What remains below is the L-priority tail.
 
-### L/S — Trim `# Recent turns` verbatim quota
-
-**What:** Reduce from 5 verbatim turns to 3, or gate behind a flag file.
-
-**Why:** Verbatim quotes are token-heavy on every reload; after a compact the summary already carries the gist. Tradeoff: protocol explicitly values "live texture" the summarizer paraphrases away — measure before cutting.
-
----
-
-### L/S — Verify qmd indexes frontmatter fields
-
-**What:** Check whether qmd's FTS index covers frontmatter values (`description`, `tags`, names). If not: document as a known `/recall` limitation, or prepend key frontmatter fields into the indexed body via the transcript-export/gen-index tooling.
-
-**Why:** iva weights frontmatter meta-fields high because name/company facts often exist ONLY in frontmatter — search misses them otherwise. Same risk applies to our cards-style docs.
-
----
-
 ### L/L — Link-graph rerank for /recall
 
 **What:** Rerank BM25 hits by markdown-link proximity between memory files (iva reranks via its nightly-built vault graph).
@@ -233,10 +210,10 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review, v6.20.0 the compaction path, v6.21.0 recall + coexistence with native memory. Next, in order:
 
-0. **Review 2026-11 section above** — shipped: compaction path (v6.20.0), recall + native-memory coexistence (v6.21.0). Still owed: one live `/compact` observation. Next: citations / `verified_at` → instruction diet + origin gate → closed-book eval → plugin packaging.
+0. **Review 2026-11 section above** — shipped: compaction path (v6.20.0), recall + native-memory coexistence (v6.21.0). fact freshness — citations, origin gate, L1a diet (v6.22.0). Still owed: one live `/compact` observation. Next: closed-book eval → plugin packaging.
 1. **M/L — Lightweight vector search without qmd** *(deferred)* — ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
 2. **L/M — merge-settings.sh jq-only path** — no sync pass / no per-event dedup on jq-only systems.
-3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
+3. **L-tail** — **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
 
 ### Legend
 

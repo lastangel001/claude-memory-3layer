@@ -50,7 +50,7 @@ All three fail open: `set -euo pipefail` + an ERR trap that logs and exits 0 wit
 ## Health tooling
 
 - `bin/doctor.sh` — the *install*: files, settings.json, duplicate registrations, CRLF, dynamic self-test of installed hooks, split memory directories, hook outcomes.
-- `bin/vault-doctor.sh` — the *content*: IDENTITY size, SESSION size/staleness, `.claude-docs` frontmatter / orphans / links, including the doc index in the repo's `CLAUDE.md`.
+- `bin/vault-doctor.sh` — the *content*: IDENTITY size, SESSION size/staleness, `.claude-docs` frontmatter / orphans / links, including the doc index in the repo's `CLAUDE.md`; `src:` citations (file / symbol still there, commits since the cited one); CLAUDE.md diet (length, lines copied from README).
 
 ## Tests and CI
 
