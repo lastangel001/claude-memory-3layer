@@ -1,5 +1,32 @@
 # Changelog
 
+## v6.20.0 — 2026-11-18 — compaction path: deterministic checkpoint + re-injection
+
+The compaction story in the README described a sequence Claude Code does not provide. This release replaces it with one that needs no cooperation from the model.
+
+**Fixed**
+- **The PreCompact "flush reminder" reached nobody.** The hook printed a JSON `systemMessage` asking the model to update SESSION.md before compaction. Per the hooks reference, compaction starts as soon as the hook returns (the model gets no turn), and Claude Code *discards* a PreCompact hook's `systemMessage`; the only output channel is plain stdout, which goes to the summarizer. `pre-compact.sh` now does what it can actually do: it writes a checkpoint and prints plain-text instructions for the summary (keep recent user messages, identifiers, decisions with rationale and the next step verbatim; never reproduce `<private>` content).
+- **PROTOCOL rule 5 ("PreCompact = mandatory flush") was unfulfillable** and is rewritten: compaction gives no warning, so SESSION.md must already be current; the announced-compact checkpoint ritual stays for the one case where the model does get a turn.
+
+**Added**
+- **`bin/compact-snapshot.sh`** → `memory/compact-snapshot.md`, written by PreCompact and replaced at every compaction: the last 5 user turns **verbatim** (tool results, meta lines, subagent prompts and system reminders skipped; `<private>` stripped; nothing captured for a `.claude-private` project) plus branch / HEAD / uncommitted count. Only for projects that already keep a SESSION.md. Tunable via `COMPACT_SNAPSHOT_TURNS` / `COMPACT_SNAPSHOT_TURN_CHARS`.
+- **Post-compaction re-injection.** SessionStart runs again after compaction (`source: compact`); the hook now inlines SESSION.md (up to 5,000 chars) and the snapshot (up to 2,200) so state returns without a tool call. Budgeted against Claude Code's 10,000-character hook-context cap: the snapshot is shed first, and when even SESSION.md does not fit the model is told to read both files — never an overflow that Claude Code would cut to a 2,000-character preview.
+- **`<memory-record>` frame** around everything re-injected: it states that this is a record of past work to verify against the code, not a new instruction, and that only `# State → next` says what was planned. `transcript-export.sh` strips the frame, so injected state is never indexed by `/recall` as conversation.
+- **`doctor.sh`** reports a non-canonical memory directory that has no twin (a name Claude Code would never produce), with the name to rename it to.
+- Outcome journal: PreCompact records `snapshot=ok turns=N`; "zero turns with a transcript on hand" is `degraded` (this is how transcript-format drift will surface). SessionStart records `source=` and `inject=`.
+- Tests: 127 → 148.
+
+**Changed**
+- If the inlined record breaks the JSON envelope (invalid UTF-8, stray control characters), the hook re-emits without it instead of falling back to the bare error message — the protocol context is never traded for the record.
+- `pre-compact.sh` no longer carries the compression rule (it was addressed to a reader that never saw it); `session-start.sh` still injects it.
+
+**Not done, on purpose**
+- A PostCompact hook that saves `compact_summary`: the docs give no version for the event and do not say how an unknown event name in `settings.json` is treated by older Claude Code — registering it for everyone is not worth the risk for a file the transcript already contains. Tracked in IDEAS.md.
+
+**Known limits**
+- The transcript `.jsonl` format is internal to Claude Code and written asynchronously: the snapshot may miss the very last turn, and a format change would empty it (visible as `degraded` in `doctor.sh`).
+- The PreCompact / SessionStart contracts are taken from the documentation; this repo's tests cover our side, not a live compaction.
+
 ## v6.19.0 — 2026-11-18 — reliability: project directory, PostToolUse, hook outcomes
 
 A review of the hooks against a long-lived install: several mechanisms were working differently from what the README described, and none of it showed up as an error.

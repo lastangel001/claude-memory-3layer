@@ -16,7 +16,7 @@ Three layers with different decay rates and **deliberate placement** — codebas
 
 Two hooks enforce discipline:
 - **SessionStart** — injects protocol reminder; warns if `SESSION.md` is >24h stale (likely from a different task; model must surface this and ask user before continuing)
-- **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes everything
+- **PreCompact** — snapshots the last user turns + git position to `memory/compact-snapshot.md` and gives the summarizer instructions; SessionStart re-injects `SESSION.md` after compaction
 
 The killer move: **gotchas in L1b** + **verbatim Recent turns in L2**. Future sessions hit the same project foot-guns with a one-line warning waiting; post-compact recovery doesn't lose the user's exact wording. Knowledge that should be team-shared lives in git, not on one developer's laptop.
 
@@ -217,7 +217,7 @@ To see the staleness warning fire end-to-end: artificially backdate a SESSION.md
 
 1. **Session start** → hook resolves the project directory (from the `transcript_path` Claude Code passes it) and injects the protocol reminder with absolute `SESSION.md` / `project.md` paths → model reads `IDENTITY.md` + `SESSION.md` (account-local). `<repo>/CLAUDE.md` is auto-loaded by Claude Code itself; `.claude-docs/*` are read on demand via the index.
 2. **During work** → model writes decisions, file map, key files, recent user turns to `SESSION.md` continuously, refreshing `last_updated:` on every write. Discovers a project gotcha → adds it to `<repo>/.claude-docs/gotchas.md` and the user commits it as part of the work.
-3. **Pre-compact** → user signals compact → model does PRE-COMPACT CHECKPOINT (git status, full SESSION.md flush including verbatim Recent turns) → hook reminds → compact runs → after compact, model's first action is reading SESSION.md back.
+3. **Compaction** → auto-compact gives the model no turn: the PreCompact hook writes `compact-snapshot.md` (last user turns verbatim, git position) and instructs the summarizer; compact runs; SessionStart fires again (`source: compact`) and re-injects SESSION.md + the snapshot as a `<memory-record>`. If the user *announces* a compact, the model first does the PRE-COMPACT CHECKPOINT (git status, full SESSION.md update).
 4. **Next session** → hook reads `last_updated`. If >24h, injects STALENESS WARNING — model must ask user "continue or reset?" instead of silently continuing with stale state from a different task.
 5. **Task done** without "remember" → SESSION.md gets wiped to template. Cross-session promotion is **explicit-only**: user says "запомни" / "remember" → relevant info migrates into IDENTITY.md (personal) or `<repo>/.claude-docs/<file>.md` (codebase fact, user commits).
 
@@ -431,7 +431,7 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 - `templates/project.md.fallback.template` — L1-fallback template (account-local project memory)
   (all templates are also installed to `~/.claude/templates/`)
 - `hooks/session-start.sh` — staleness check + CWD mismatch + privacy redaction + protocol injection
-- `hooks/pre-compact.sh` — flush reminder (privacy, compression, CWD rules)
+- `hooks/pre-compact.sh` — compaction checkpoint + summary instructions (calls `bin/compact-snapshot.sh`)
 - `hooks/post-tool-use.sh` — selective auto-capture (git commit, CLAUDE.md / .claude-docs writes)
 - `commands/{recall,codemap,memory,memstat,onboard-memory,migrate-legacy-memory}.md` — slash commands
 - `bin/{codemap,doctor,memstat,merge-settings,onboard-report,transcript-export,update}.sh` — support scripts

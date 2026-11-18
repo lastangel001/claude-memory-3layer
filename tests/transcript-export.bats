@@ -57,6 +57,19 @@ run_export_inner() {
   ! grep -q "sk-secret-123" "$out"
 }
 
+@test "strips hook-injected <memory-record> blocks from export (loop guard)" {
+  make_jsonl
+  cat >> "$PROJ_DIR/sess-1.jsonl" <<'EOF'
+{"type":"user","message":{"role":"user","content":"before <memory-record kind=\"record-of-past-work\">\nINJECTED-STATE-MARKER\n</memory-record> after-record"}}
+EOF
+  cd "$WORK_DIR"
+  run env CLAUDE_HOME="$TEST_CLAUDE_HOME" bash "$REPO_ROOT/bin/transcript-export.sh" "$SLUG"
+  [ "$status" -eq 0 ]
+  out="$PROJ_DIR/memory/raw/transcripts/sess-1.md"
+  ! grep -q "INJECTED-STATE-MARKER" "$out"
+  grep -q "after-record" "$out"
+}
+
 @test "opt-out flag file disables export" {
   make_jsonl
   touch "$TEST_CLAUDE_HOME/.transcript-export-disabled"

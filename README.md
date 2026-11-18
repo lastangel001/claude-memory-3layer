@@ -99,9 +99,14 @@ Three months later, new session asks "why UUIDs?". Answer is in Decisions. No re
 
 ---
 
-### Compact / context reset → zero loss
+### Compact / context reset → state comes back without the model's help
 
-Context fills mid-task. PreCompact hook fires, reminds Claude to flush. Claude writes full state to SESSION.md including verbatim recent turns. After compact, first read is SESSION.md — resumes same branch, same next step, same rationale intact.
+Context fills mid-task and auto-compact starts — the model gets no turn, so it cannot "flush" anything at that moment. Two things happen instead, both deterministic:
+
+1. **PreCompact hook** writes `memory/compact-snapshot.md` — the last user turns *verbatim* and the git position — and hands the summarizer instructions on what to keep verbatim (its stdout is the only channel Claude Code offers a PreCompact hook).
+2. **SessionStart hook** runs again after compaction and re-injects `SESSION.md` plus that snapshot, wrapped in a `<memory-record>` block that says what it is: a record of past work to verify against the code, not a new instruction.
+
+What makes this work is the continuous-update rule: `SESSION.md` is written as the work proceeds, so it is already current when compaction hits. Resume is the same branch, the same next step, the same rationale.
 
 ---
 
@@ -193,7 +198,8 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
   - *Private path exclusions* — if `.claude-private` exists at the project root, reads it as a glob pattern list (one per line, `#` comments ignored) and instructs the model to treat matching paths as non-existent for all memory and capture purposes
   - *Transcript export* — exports Claude Code's own session transcripts (`.jsonl`) to searchable markdown under `memory/raw/transcripts/` (incremental, `<private>`-stripped, 30-day rolling window, opt-out via `~/.claude/.transcript-export-disabled`) — so `/recall` can quote past conversations even when nothing was written to SESSION.md
   - Also kicks background `qmd update` debounced 6h (atomic marker — parallel sessions don't double-fire)
-- **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
+- **PreCompact** — does two things that need no model. (1) Writes `memory/compact-snapshot.md` via `bin/compact-snapshot.sh`: last 5 user turns verbatim (`<private>` stripped; skipped entirely for a `.claude-private` project) + branch / HEAD / uncommitted count. Only for projects that already keep a `SESSION.md`. (2) Prints plain-text instructions for the compaction summary — keep recent user messages, identifiers, decisions with rationale and the next step verbatim. It does **not** ask the model to flush: compaction starts as soon as the hook returns, and Claude Code discards a PreCompact hook's `systemMessage` (which is all this hook emitted before v6.20.0).
+  - *After compaction* SessionStart fires with `source: compact` and inlines `SESSION.md` (up to 5,000 chars) and the snapshot (up to 2,200) in a `<memory-record>` frame. The hook context is capped at 10,000 characters, so the hook sheds in order — snapshot first, then SESSION.md — and falls back to "read these two files now" rather than let Claude Code cut the tail to a preview. `transcript-export.sh` strips the frame so injected state is never indexed as conversation.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
   - a **new** git commit made via Bash or PowerShell → appends `<sha> <subject>`, read from `git log -1` (a command that merely mentions `git commit` captures nothing; one commit is captured once)
   - `Write` / `Edit` / `MultiEdit` of `**/CLAUDE.md` → notes L1a in-repo entry update
@@ -297,7 +303,7 @@ templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
 hooks/session-start.sh          — project-dir resolution + absolute memory paths + staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
-hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
+hooks/pre-compact.sh            — compaction checkpoint (compact-snapshot.md) + plain-text instructions for the summary
 hooks/post-tool-use.sh          — selective auto-capture: new git commits, CLAUDE.md / .claude-docs edits
 commands/recall.md              — /recall slash command (hybrid memory search)
 commands/codemap.md             — /codemap slash command (symbol map)
@@ -316,6 +322,7 @@ bin/onboard-report.sh           — collect raw repo data (stack, git log, hot f
 bin/update.sh                   — one-step updater: git pull + re-install from tracked source path
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/mcp-recall.mjs              — zero-dep MCP server: search_memory + get_identity for subagents/headless
+bin/compact-snapshot.sh         — last user turns verbatim + git position → memory/compact-snapshot.md (called by PreCompact)
 bin/transcript-export.sh        — export Claude Code .jsonl transcripts → searchable markdown (SessionStart)
 bin/lib/slug.sh                 — project-directory resolver: transcript_path → formula → legacy dir (sourced by hooks, doctor, /session-end)
 bin/lib/diag.sh                 — hook outcome journal writer (debug/hook-diag.jsonl; sourced by all three hooks)
@@ -323,7 +330,7 @@ bin/lib/paths.sh                — shared PATH augmentation for Node/npm toolin
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (127 cases: hooks, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (148 cases: hooks, compaction path, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements

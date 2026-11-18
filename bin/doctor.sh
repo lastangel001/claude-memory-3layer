@@ -277,6 +277,14 @@ for _d in "$CLAUDE_HOME/projects"/*/; do
   elif [[ -d "$CLAUDE_HOME/projects/-$_n" ]]; then
     _twin="-$_n"          # unix: old formula stripped the leading dash
   fi
+  # No twin, but the name is not one Claude Code would ever produce: the
+  # project's real directory does not exist yet, and when it does, this
+  # memory will not be found there.
+  if [[ -z "$_twin" && "$_canon" != "$_n" ]]; then
+    _twins=$((_twins + 1))
+    warn "Non-canonical memory directory: '$_n' — rename it to '$_canon' (Claude Code replaces every non-alphanumeric character with '-')"
+    continue
+  fi
   if [[ -n "$_twin" ]]; then
     _twins=$((_twins + 1))
     if [[ -f "$CLAUDE_HOME/projects/$_twin/memory/SESSION.md" && -f "$_d/memory/SESSION.md" ]]; then

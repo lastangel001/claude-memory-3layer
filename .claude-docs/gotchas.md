@@ -208,11 +208,41 @@ confidence: verified
 
 Claude Code refuses a `Write` to a file that changed since the model last read it. Every `[auto]` line PostToolUse appends therefore makes the model's next SESSION.md write fail once (re-read, retry). Keep appends rare: real commits only, and an identical `[auto] label: detail` line is never added twice.
 
-## PreCompact cannot make the model flush
+## PreCompact cannot make the model flush — and its JSON output is thrown away
 
 confidence: inferred
 
-Per the Claude Code hooks reference, compaction starts right after PreCompact returns — the model gets no turn in between, `systemMessage` is shown to the *user*, and plain stdout is appended to the *summarizer's* instructions. So `pre-compact.sh`'s "FLUSH REQUIRED" text reaches neither the model before compaction nor the summary. What actually protects state today is the continuous-update rule plus the SessionStart re-run after compaction. Not yet verified empirically; the redesign (stdout as summary instructions, deterministic side effects, PostCompact, SessionStart `source=compact`) is tracked in IDEAS.md.
+(Source: the Claude Code hooks reference, which states each point below explicitly. Not observed in a live compaction — a session cannot trigger its own. Our side of the contract is covered by `tests/pre-compact.bats`.)
+
+**Symptom:** the README promised "PreCompact fires, reminds Claude to flush, Claude writes SESSION.md". Nothing of the sort happened: no model ever acted on the reminder.
+
+**Cause:** three facts about the event. (1) Compaction starts as soon as the hook returns — the model gets no turn in between. (2) For PreCompact, Claude Code **discards** the JSON fields `systemMessage` and `continue`; `hookSpecificOutput.additionalContext` is not a PreCompact channel either. (3) The only output channel is plain stdout, and it goes to the *summarizer* as instructions (10,000-character cap, truncated above it — not spilled to a file like other hooks). Until v6.20.0 `pre-compact.sh` printed a JSON `systemMessage`; it reached nobody.
+
+**Fix (v6.20.0):** the hook stopped asking and started doing. Side effect: `bin/compact-snapshot.sh` writes `memory/compact-snapshot.md` (last user turns verbatim + git position). Output: plain-text summary instructions. Hand-back: SessionStart runs again after compaction with `source: compact` and inlines SESSION.md + the snapshot.
+
+**Lesson:** read the per-event output contract before designing a hook — the fields are not uniform across events. A hook that must change what the model *does* at an event where the model has no turn is impossible; make it deterministic or move it to an event that has one.
+
+## Hook context is capped at 10,000 characters — and the overflow is a preview, not an error
+
+confidence: inferred (the cap and the spill behaviour — from the hooks reference) · verified (the two traps below — reproduced in tests)
+
+A hook's `additionalContext` (and plain stdout) is capped at 10,000 characters *per string*. Above it Claude Code saves the text to a file and gives the model the path plus the first 2,000 characters — and does **not** ask the model to read the file. So an oversized SessionStart context silently loses its tail, which is exactly where re-injected state sits.
+
+`session-start.sh` therefore budgets (`_CONTEXT_CAP=9500`): inline SESSION.md only up to 5,000 chars and the snapshot up to 2,200, shed the snapshot first when the fixed part has grown (warnings, `.claude-private` list), and fall back to an explicit "READ NOW" instruction instead of overflowing. Lengths are measured with `${#var}`, which counts bytes under a byte-oriented locale — conservative, never over.
+
+Two traps found while building it: truncating with `${var:0:N}` can split a multibyte character and produce invalid UTF-8, which fails JSON validation and used to cost the *whole* context (truncate on line boundaries with awk); and file content can carry control characters `json_escape` does not cover (strip them with `tr`, and if the inlined record still breaks the envelope, re-emit without it rather than falling back to the bare error).
+
+## The transcript `.jsonl` is internal and may lag
+
+confidence: inferred (from the sessions and hooks docs)
+
+The docs call the transcript entry format internal and unstable, and note it is written asynchronously — at hook time it may not yet hold the newest turn. `compact-snapshot.sh` and `transcript-export.sh` parse it anyway (there is no other source for verbatim user turns), so: keep the parsing in those two scripts only, treat "zero turns found with a transcript on hand" as `degraded` in the outcome journal (that is how format drift will show up), and never make correctness depend on the last turn being present.
+
+## bats: a variable set by a helper is lost when the helper runs in a pipeline
+
+confidence: verified
+
+`{ printf …; head -c 5000 /dev/zero; } | make_session "$PWD"` runs `make_session` in a subshell, so the `SESSION_FILE` it sets never reaches the test body. A later `$(dirname "$SESSION_FILE")` silently resolves to `.` and the fixture lands in the wrong directory — the test then fails on an assertion that looks like a product bug. Re-derive the path after the pipeline, or feed the helper through a here-doc / temp file.
 
 ## A `# shellcheck disable=` directive covers only the next command
 

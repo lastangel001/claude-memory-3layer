@@ -88,6 +88,7 @@ backup_and_install "$SRC/bin/memstat.sh"               "$CLAUDE_HOME/bin/memstat
 backup_and_install "$SRC/bin/merge-settings.sh"        "$CLAUDE_HOME/bin/merge-settings.sh"
 backup_and_install "$SRC/bin/onboard-report.sh"        "$CLAUDE_HOME/bin/onboard-report.sh"
 backup_and_install "$SRC/bin/transcript-export.sh"     "$CLAUDE_HOME/bin/transcript-export.sh"
+backup_and_install "$SRC/bin/compact-snapshot.sh"      "$CLAUDE_HOME/bin/compact-snapshot.sh"
 backup_and_install "$SRC/bin/update.sh"                "$CLAUDE_HOME/bin/update.sh"
 backup_and_install "$SRC/bin/vault-doctor.sh"          "$CLAUDE_HOME/bin/vault-doctor.sh"
 backup_and_install "$SRC/bin/gen-index.sh"             "$CLAUDE_HOME/bin/gen-index.sh"

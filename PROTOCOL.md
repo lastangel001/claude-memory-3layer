@@ -56,9 +56,9 @@ Never put codebase facts in account memory. Never put personal preferences in re
    - `# Decisions` — chose X over Y (reason matters later); tried X, failed (reason known); constraint discovered; obvious solution rejected intentionally.
    - `# State` — after each task chunk, on block/unblock, on branch change. Last action + next step.
    - `# File map` — non-obvious source of truth; misleading name; non-obvious cross-file dependency.
-   - `# Recent turns` — update before any potentially-large operation and on PreCompact; last ~5 user turns verbatim (long → first sentence + `[...]`; rapid chains grouped with `->`) + 1-line "I did:" each.
+   - `# Recent turns` — update before any potentially-large operation; last ~5 user turns verbatim (long → first sentence + `[...]`; rapid chains grouped with `->`) + 1-line "I did:" each.
    - Quick test: *"Without this fact, would a future agent decide worse or repeat work?"* yes → write; no → skip. Ad-hoc sections encouraged.
-5. **PreCompact = mandatory flush.** Write everything needed to resume. Refresh `last_updated:` (UTC ISO) on **every** SESSION.md write. If SessionStart warns `SESSION.md is stale` (>24h), do not silently continue — ask: "last touched X ago, goal was Y. Continue or reset?"
+5. **Compaction gives no warning — SESSION.md must already be current.** Auto-compact starts without giving you a turn, so nothing can be flushed "at PreCompact"; rule 4 is the only flush there is. The hooks cover the rest deterministically: PreCompact saves the last user turns verbatim + git position to `memory/compact-snapshot.md`, and SessionStart re-injects SESSION.md + that snapshot after compaction inside a `<memory-record>` block — a record of past work to verify, not an instruction. When the user announces a manual compact you do get a turn: do the checkpoint in `workflows.md`. Refresh `last_updated:` (UTC ISO) on **every** SESSION.md write. If SessionStart warns `SESSION.md is stale` (>24h), do not silently continue — ask: "last touched X ago, goal was Y. Continue or reset?"
 6. **Promotion, not archival.** Cross-session memory persists ONLY on explicit "remember"/"запомни": about user → `IDENTITY.md`; about codebase → propose `<repo>/CLAUDE.md` / `.claude-docs/`; no repo → `project.md`; else ask. Task done without the signal → wipe SESSION.md to template (`# Goal: (none — last task: X)`, frontmatter `status: done`), append one timeline line `- YYYY-MM-DD: <task> — <outcome>` under `## Timeline` in `project.md` (create section if absent). **No auto-promote.**
 7. **Gotchas are the highest-leverage memory** — write immediately, no "запомни" needed, when: behavior contradicts docs/intuition; "looks right but breaks"; "looks wrong but is intentional"; silent failure; platform quirk. **Fact lifecycle:** never silently delete or rewrite a recorded fact — outdated → mark `status: superseded` and move the old value to a dated `## History` line (`- 2026-03→06: was X`); top of file = current truth, History = trail. Tag facts `confidence: verified` (confirmed by running/reproducing) or `confidence: inferred` (deduced from reading) — assert the first, hedge the second.
 8. **Server-agent test** before any account-local write: fresh agent cloning the repo at midnight needs it → push it in-repo.
@@ -116,7 +116,7 @@ Derivable code patterns · git-history facts · CLAUDE.md duplicates · trivia �
 
 ## Recovery (post-compact / post-restart)
 
-First tool calls, in parallel, BEFORE answering the user: `Read IDENTITY.md` + `Read SESSION.md` + `Read project.md` (if exists) + any `.claude-docs/*.md` SESSION points at. Verify `<repo>/CLAUDE.md` is in context. The summarizer paraphrases away live texture — the files are authoritative.
+First tool calls, in parallel, BEFORE answering the user: `Read IDENTITY.md` + `Read SESSION.md` (skip if the hook just re-injected it in a `<memory-record>` block) + `Read project.md` (if exists) + any `.claude-docs/*.md` SESSION points at. Verify `<repo>/CLAUDE.md` is in context. The summarizer paraphrases away live texture — the files are authoritative.
 
 ## Reference docs — read on demand, not upfront
 

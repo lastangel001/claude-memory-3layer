@@ -73,6 +73,9 @@ import json, re, sys, io
 
 src, dst, max_bytes = sys.argv[1], sys.argv[2], int(sys.argv[3])
 PRIVATE = re.compile(r"<private>.*?</private>", re.S)
+# <memory-record> blocks are hook-injected state, not conversation: indexing
+# them would make injected memory recallable as if someone had said it.
+RECORD = re.compile(r"<memory-record\b.*?</memory-record>", re.S)
 
 def text_of(content):
     if isinstance(content, str):
@@ -106,7 +109,7 @@ for line in open(src, encoding="utf-8", errors="replace"):
     who = "User" if typ == "user" else "Assistant"
     out.write(f"**{who}:**\n{text.strip()}\n\n---\n\n")
 
-body = PRIVATE.sub("", out.getvalue())
+body = RECORD.sub("", PRIVATE.sub("", out.getvalue()))
 if not body.strip():
     sys.exit(3)  # nothing exportable — caller removes empty target
 enc = body.encode("utf-8")
@@ -147,6 +150,8 @@ for (const line of fs.readFileSync(src, "utf8").split("\n")) {
   out += `**${d.type === "user" ? "User" : "Assistant"}:**\n${text.trim()}\n\n---\n\n`;
 }
 out = out.replace(/<private>[\s\S]*?<\/private>/g, "");
+// Hook-injected state is not conversation — keep it out of the recall index.
+out = out.replace(/<memory-record\b[\s\S]*?<\/memory-record>/g, "");
 if (!out.trim()) process.exit(3);
 let buf = Buffer.from(out, "utf8");
 let truncated = "";
