@@ -68,10 +68,77 @@ Backlog of enhancement ideas. Each entry has: priority (H/M/L), effort (S/M/L), 
 - [x] **Fixed (found by new tests):** `migrate.sh` Pass B regex used `\<!--` — in ERE `\<` is a word-boundary anchor, never matched the literal `<!--`; Pass B was still dead after the v6.16.0 `local` fix. Now literal `<` (v6.17.0)
 - [x] Release hygiene: backfilled annotated git tags `v6.3.0`–`v6.17.1` (was only through v6.2.4) + README release/CI badges (v6.18.1)
 - [x] Extend SESSION compression rule to `project.md` (L1-fallback, incl. `## Timeline`) — both hooks' compress wording, PROTOCOL.md rule 4, README, fallback template; `tests/pre-compact.bats` added (first PreCompact coverage), `session-start.bats` asserts unique `agent-only memory prose` phrase; flag names/label prefix unchanged (v6.18.0)
+- [x] Project directory resolver — slug from hook-stdin `transcript_path` → corrected formula (every non-alphanumeric → `-`) → legacy-formula directory; hook injects absolute SESSION.md/project.md paths, model never derives a slug; `doctor.sh` reports twin directories (v6.19.0)
+- [x] PostToolUse rework — narrow matcher + `async`, pure-bash gates before any interpreter, commit evidence from `git log -1` (sha dedupe) instead of parsing the command, `Edit`/`MultiEdit`/PowerShell/backslash paths, no duplicate capture lines (v6.19.0)
+- [x] Settings migration — `merge-settings.sh` sync pass for our single-hook groups (matcher + new hook keys), exit 10 = nothing to do; `install.sh` always merges (v6.19.0)
+- [x] Hook outcome journal — `bin/lib/diag.sh` → `debug/hook-diag.jsonl` (`ok`/`degraded`/`failed`), `doctor.sh` 7-day summary (v6.19.0)
+- [x] Staleness exemption for closed sessions (`status: done`) in `session-start.sh` + `vault-doctor.sh` (v6.19.0)
+- [x] Repo's own `.claude-docs/` tracked (architecture.md, generated index.md); `vault-doctor.sh` validates links in the repo `CLAUDE.md` (v6.19.0)
+- [x] Removed `/memory auto on|off` — flag read by no hook, contradicted explicit promotion (v6.19.0)
 
 ---
 
 ## Backlog
+
+## Review 2026-11 (hooks vs current Claude Code, hindsight, memory-systems survey)
+
+Source: a review of this repo against the current Claude Code hooks/memory docs, [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight) (server-based agent memory — opposite architecture, a few portable ideas) and a survey of 2026 agent-memory work. The reliability slice shipped in v6.19.0; what follows is the rest, in suggested order.
+
+### H/M — PreCompact cannot make the model flush: redesign the compaction path
+
+**What:** (1) `pre-compact.sh` prints plain stdout — per the hooks reference that text becomes *instructions for the summary* (10,000-char cap) — telling the summarizer what to keep verbatim (last user turns, decisions with rationale, next step, the SESSION.md path). (2) A deterministic side effect in the same hook: copy the last N user turns from the transcript into SESSION.md `# Recent turns` — no model involved. (3) New PostCompact hook: its input carries `compact_summary`; save it next to SESSION.md. (4) SessionStart with `source=compact`: inject SESSION.md's content directly (it is kept under 4 KB; the injection cap is 10,000 chars) instead of asking the model to read it.
+
+**Why:** today the hook emits `systemMessage`, which is shown to the user; compaction starts right after PreCompact returns, so the model gets no turn to write anything. The README's "PreCompact → flush → zero loss" describes a sequence the harness does not provide. See gotchas.md (`confidence: inferred` — verify empirically first: one manual `/compact` with the trace log open).
+
+**Tradeoff:** parsing the transcript `.jsonl` relies on a format the docs call internal (`transcript-export.sh` already does). Keep the parser in one place.
+
+### H/S — Frame injected memory as a record of the past
+
+**What:** wrap whatever SessionStart injects from SESSION.md/project.md in a fixed tag whose preamble says: this is a record, verify against the code before relying on it, it assigns no tasks — only `# State → next` is directive. Strip that tag in `transcript-export.sh` so injected text is not re-indexed as conversation.
+
+**Why:** hindsight's coding-agent integration converged on exactly this framing after injected history was replayed as instructions; they also strip their tag before storing transcripts to avoid a retain→recall loop. Becomes necessary the moment (4) above lands.
+
+### M/M — Coexist with Claude Code's native auto memory
+
+**What:** native auto memory lives in the same `~/.claude/projects/<slug>/memory/` directory, loads its `MEMORY.md` index into every session, and its instructions arrive in the system prompt next to ours — the hook's "default memory instructions are OVERRIDDEN" line is only text. `install.sh` should offer the documented switch (`autoMemoryEnabled: false`, or `autoMemoryDirectory` to move it elsewhere) and `doctor.sh` should report which mode is active. Note the side effect: subagent `memory:` frontmatter stops working when auto memory is off.
+
+**Why:** two memory systems writing into one directory with two instruction sets; the indexer already rewrites our frontmatter (gotchas.md). Also: native memory is keyed by git root, ours by cwd — decide deliberately (worktrees: resolve `project.md` via `git rev-parse --git-common-dir`, keep SESSION.md per worktree).
+
+### M/S — Rename `/memory`
+
+**What:** `/memory` is a Claude Code built-in (edit CLAUDE.md files, toggle auto memory). Rename ours (e.g. `/memidx`) or ship commands under a plugin namespace.
+
+### M/M — `/recall` without qmd, and over the current repo's `.claude-docs`
+
+**What:** (a) ripgrep fallback when qmd is absent (ranked by match count; same output shape). (b) Search `<repo>/.claude-docs/` of the current repo by default — today only `claude-l0` and `claude-projects` are indexed, yet the protocol routes "which doc has this gotcha?" to `/recall`. Log zero-hit queries to the outcome journal — they show what memory is missing.
+
+**Why:** the highest-leverage layer (gotchas) is the one `/recall` does not see unless the user registered a per-repo collection by hand.
+
+### M/M — Citations + verify-before-use for L1b facts
+
+**What:** a fact may carry `src: path#symbol @ <sha>`; `vault-doctor` checks via ctags/ripgrep that cited paths/symbols still exist and lists docs whose cited files changed in the last N commits (`verified_at: <sha>` in frontmatter). Flag only — never delete. Protocol rule: check the citation before asserting the fact. Companion write rule from hindsight: an agent's "fixed"/"passes" is `confidence: inferred` until a command output is cited.
+
+**Why:** GitHub's write-up of Copilot's agentic memory reports citations checked before use as the staleness mitigation, with a measured rise in PR merge rate. Staleness measured in commits beats staleness measured in days.
+
+**Tradeoff:** authoring friction — cite symbols, not line numbers; keep it optional per fact.
+
+### M/L — Closed-book memory eval
+
+**What:** N canned questions per repo, answered by a subagent that may read only the memory files; grep-able answers. First target: does caveman compression of SESSION.md/project.md lose answers?
+
+**Why:** nothing in this repo measures whether the memory actually carries what a fresh agent needs. One survey data point: a compressed dialect cost another system a large recall drop.
+
+### L/S — Instruction diet + origin gate
+
+**What:** `vault-doctor` lint for L1a overview prose that duplicates README (an ETH study found LLM-generated instruction files slightly *reduce* task success while raising cost — relevant to what `/onboard-memory` generates). And an `origin: user|reproduced|inferred|external` tag: content that came from web/MCP output never reaches L1 or gotchas without user confirmation.
+
+### L/M — Ship as a Claude Code plugin
+
+**What:** `hooks/hooks.json` + `${CLAUDE_PLUGIN_ROOT}`, commands namespaced. A plugin cannot contribute an always-loaded CLAUDE.md — the protocol would have to arrive via SessionStart `additionalContext` (10,000-char cap).
+
+**Tradeoff:** two install paths to maintain; do it only together with the `/memory` rename.
+
+---
 
 ### M/L — Lightweight vector search without qmd  *(deferred — not a batch item)*
 
@@ -157,11 +224,11 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 ---
 
-### L/M — merge-settings.sh fallback dedup
+### L/M — merge-settings.sh jq-only path: no sync pass
 
-**What:** The non-jq fallback path appends source hooks to an event that already exists in target without deduplicating commands (admitted in the script header comment). Implement command-level dedup in all three parser paths.
+**What:** python3 and node paths dedup by command and (since v6.19.0) sync matcher/hook keys of our single-hook groups. The jq-only path merges at event level: it adds missing events but neither adds our hook to an event that already exists nor migrates a matcher. Port both to jq.
 
-**Why:** Re-running install with a partially-merged settings.json can register a hook twice → double execution per event.
+**Why:** on a machine with only jq, an upgrade keeps the old PostToolUse `*` matcher (the in-script gates still keep it cheap) and a foreign hook on the same event blocks ours from being registered.
 
 ---
 
@@ -169,10 +236,11 @@ Source: architect assessment against the `caveman` repo's usage analysis (`docs/
 
 ### Current top queue (all H items + distillation timeline shipped v6.16.0; all 18 M-priority items shipped v6.17.0)
 
-The M-sweep is complete. What remains is one deferred M/L and the L-priority tail:
+The M-sweep is complete; v6.19.0 shipped the reliability slice of the 2026-11 review. Next, in order:
 
-1. **M/L — Lightweight vector search without qmd** *(deferred)* — the only unshipped M item; ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
-2. **L/M — merge-settings.sh fallback dedup** — re-running install can double-register a hook on jq-only systems.
+0. **Review 2026-11 section above** — H/M compaction redesign (verify the PreCompact behaviour empirically first) → H/S record-of-the-past framing → M native-memory coexistence, `/memory` rename, `/recall` fallback.
+1. **M/L — Lightweight vector search without qmd** *(deferred)* — ONNX native bindings + cross-platform validation make it a scoped release of its own, not a batch slot.
+2. **L/M — merge-settings.sh jq-only path** — no sync pass / no per-event dedup on jq-only systems.
 3. **L-tail** — trim `# Recent turns` quota · verify qmd indexes frontmatter · BSD `stat` in memstat · **L/M** cavecrew-style memory-researcher subagent template · **L/L** link-graph rerank for `/recall` · remote sync for L0/L1-fallback.
 
 ### Legend

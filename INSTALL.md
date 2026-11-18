@@ -197,7 +197,11 @@ cp <pkg>/templates/project.md.fallback.template ~/.claude/projects/<slug>/memory
 $EDITOR ~/.claude/projects/<slug>/memory/project.md
 ```
 
-Compute slug from cwd: `C:\dev\foo` → `C--dev-foo` (drive uppercase + `--` + remaining path with `/`→`-`).
+`<slug>` is the directory Claude Code itself created for the project under `~/.claude/projects/` (it holds the `.jsonl` transcripts). Don't compute it by hand — print it from the project directory:
+
+```bash
+source ~/.claude/bin/lib/slug.sh && _resolve_project && echo "$project_dir"
+```
 
 ### 6. Verify
 
@@ -211,7 +215,7 @@ To see the staleness warning fire end-to-end: artificially backdate a SESSION.md
 
 ## How it works (TL;DR for the model)
 
-1. **Session start** → hook injects protocol reminder + computes slug from cwd → model reads `IDENTITY.md` + `SESSION.md` (account-local). `<repo>/CLAUDE.md` is auto-loaded by Claude Code itself; `.claude-docs/*` are read on demand via the index.
+1. **Session start** → hook resolves the project directory (from the `transcript_path` Claude Code passes it) and injects the protocol reminder with absolute `SESSION.md` / `project.md` paths → model reads `IDENTITY.md` + `SESSION.md` (account-local). `<repo>/CLAUDE.md` is auto-loaded by Claude Code itself; `.claude-docs/*` are read on demand via the index.
 2. **During work** → model writes decisions, file map, key files, recent user turns to `SESSION.md` continuously, refreshing `last_updated:` on every write. Discovers a project gotcha → adds it to `<repo>/.claude-docs/gotchas.md` and the user commits it as part of the work.
 3. **Pre-compact** → user signals compact → model does PRE-COMPACT CHECKPOINT (git status, full SESSION.md flush including verbatim Recent turns) → hook reminds → compact runs → after compact, model's first action is reading SESSION.md back.
 4. **Next session** → hook reads `last_updated`. If >24h, injects STALENESS WARNING — model must ask user "continue or reset?" instead of silently continuing with stale state from a different task.
@@ -282,7 +286,7 @@ chmod +x ~/.claude/bin/codemap.sh
 You get:
 - **`/recall <query>`** — hybrid search across all memory layers (qmd-backed)
 - **`/codemap def|callers|callees|outline <symbol>`** — on-demand symbol queries in cwd repo (ctags+ripgrep)
-- **`/memory status | auto on|off | refresh`** — protocol controls; `/memory auto on` flips this session into auto-capture mode (model writes observations without waiting for explicit "запомни")
+- **`/memory status | refresh`** — index health + forced qmd refresh (the `auto on|off` toggle was removed in v6.19.0; a leftover `~/.claude/.memory-auto` flag file can be deleted)
 - **`/memstat [--watch]`** — "task manager" for the memory subsystem: running qmd/ctags processes, index progress (vectors vs pending), refresh schedule, and a stall/health check. Use when `node.exe` is eating CPU and you want to see what it's doing.
 
 ### 4. MCP server — memory for subagents and headless runs (optional)
@@ -336,7 +340,7 @@ This scales well — a real reverse-engineering project in this workflow accumul
 - **No journal/archive layer.** Sessions are about different tasks; carrying them forward is noise. Layer = decay rate, period.
 - **Promotion is explicit.** No auto-archival. The user, not the model, decides what crosses session boundaries.
 - **Gotchas in L1b are the highest-leverage memory.** Every project accumulates non-obvious foot-guns. A one-paragraph warning in `gotchas.md` saves the next agent (or your future self) hours of debugging.
-- **Project slug rule:** `C:\dev\foo` → `C--dev-foo` (drive uppercase + `--` + remaining path with `/`→`-`). Matches Claude Code's existing `~/.claude/projects/` directory naming.
+- **Project directory:** taken from the `transcript_path` Claude Code hands every hook, so it is always the directory Claude Code itself uses. Fallback formula (no hook stdin): every non-alphanumeric character of the native cwd → `-` (`C:\dev\my_app` → `C--dev-my-app`, `/home/u/p` → `-home-u-p`). The model is given absolute paths and never computes a slug.
 - **`last_updated` lives in YAML frontmatter** (parseable by hook, Obsidian, eyes). Legacy HTML-comment format still works.
 - **Pure bash hooks**, no Python (Python is often missing on Windows).
 - **Recent turns kept verbatim.** The compact summarizer paraphrases away texture; verbatim quotes preserve it.
@@ -403,7 +407,8 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 
 - **Hooks don't fire.** Check `~/.claude/debug/hook-trace.log` after starting a session. Empty? `settings.json` malformed (`python -m json.tool < ~/.claude/settings.json`) or path wrong. Use `~/` not `$HOME` in the JSON — Claude Code expands tilde.
 - **macOS: `date: illegal option -- d`.** You're using BSD `date`. `brew install coreutils` and either prepend its bin to PATH or replace `date -d` with `gdate -d` in `session-start.sh`.
-- **Slug looks wrong.** The hook computes it from `$PWD` in unix form (`/c/dev/foo`). On Windows, Git Bash gives this naturally. If you see `C--dev--foo` (double dash mid-path) you're running an older draft — the line should read `slug="${drive}--${rest//\//-}"` (single dash inside the path).
+- **Memory "disappeared" / two directories for one project.** Run `bash ~/.claude/bin/doctor.sh` and look at *Memory directories*. A twin is a directory named by an older slug formula or by a slug the model derived by hand (e.g. `C--dev-my_app` next to the real `C--dev-my-app`); it has a `memory/` folder but no `.jsonl` transcripts. Move its files into the real directory — when both hold a `SESSION.md`, compare them first. Until you do, hooks keep reading a legacy-formula directory if it is the only one with a `SESSION.md`.
+- **A hook feature quietly stopped working.** `doctor.sh` → *Hook outcomes* summarizes `~/.claude/debug/hook-diag.jsonl`; any `degraded` / `failed` line names what fell back.
 - **Staleness warning never fires.** Model didn't refresh `last_updated` on previous writes. The "no marker" branch will fire instead, which is the intended fallback.
 - **Model ignores the staleness warning.** Paste rule 5 from CLAUDE.md back at it. The hook injects the warning text but the model has to act on it.
 - **Model didn't auto-load `<repo>/CLAUDE.md`.** That's Claude Code's built-in behaviour, not the hook's job. Make sure cwd is inside the repo (not a sibling), and that `<repo>/CLAUDE.md` exists at the repo root (not in a subdir).
@@ -431,7 +436,7 @@ If `npm install -g @tobilu/qmd` succeeded but `qmd` is not found in hooks, the n
 - `commands/{recall,codemap,memory,memstat,onboard-memory,migrate-legacy-memory}.md` — slash commands
 - `bin/{codemap,doctor,memstat,merge-settings,onboard-report,transcript-export,update}.sh` — support scripts
 - `bin/mcp-recall.mjs` — zero-dependency MCP server (memory search for subagents/headless)
-- `bin/lib/{slug,paths}.sh` — shared libraries (slug formula, PATH augmentation)
+- `bin/lib/{slug,diag,paths,validate-json}.sh` — shared libraries (project-directory resolver, hook outcome journal, PATH augmentation, JSON parser probe)
 - `install.sh` / `migrate.sh` — installer and legacy-format migration helper
 - `settings.snippet.json` — hooks block to merge into `~/.claude/settings.json`
 - `README.md` / `CHANGELOG.md` / `IDEAS.md` / `LICENSE`

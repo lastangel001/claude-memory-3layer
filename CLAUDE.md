@@ -11,8 +11,9 @@ The protocol itself lives in [`PROTOCOL.md`](PROTOCOL.md) — `install.sh` copie
 | Making a commit — mandatory README/CHANGELOG/IDEAS triple | [.claude-docs/dev-workflow.md](.claude-docs/dev-workflow.md) |
 | Editing install.sh / doctor.sh / migrate.sh / any Windows-path handling | [.claude-docs/gotchas.md](.claude-docs/gotchas.md) |
 | Stack, layout, how hooks/bin/commands fit together | [.claude-docs/architecture.md](.claude-docs/architecture.md) |
-| Code style, naming, commit format | [.claude-docs/conventions.md](.claude-docs/conventions.md) |
 | Routing table (start here when unsure) | [.claude-docs/index.md](.claude-docs/index.md) |
+
+Commit format and versioning live in dev-workflow.md. `bash bin/vault-doctor.sh` fails when a row above points at a missing file.
 
 ## Commands
 

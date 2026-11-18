@@ -136,4 +136,92 @@ The two other frontmatter-adjacent scripts are **not** affected and need no whit
 - `migrate.sh` only matches a **line-1 HTML comment** (`<!-- last_updated: … -->`); a file already in YAML (flat or metadata-nested) starts with `---` and is correctly skipped.
 - `memstat.sh` reads **no** memory `.md` files at all (only `qmd status` + process list).
 
-Test matrix (`tests/session-start.bats`): both `cwd:` **and** `last_updated:` are covered in flat *and* metadata-nested form — any new frontmatter reader must add both-format cases or reuse `_fm_get`.
+Test matrix (`tests/session-start.bats`): both `cwd:` **and** `last_updated:` are covered in flat *and* metadata-nested form — any new frontmatter reader must add both-format cases or reuse `_fm_get`. Since v6.19.0 `session-start.sh` and `vault-doctor.sh` also read `status:` (same whitespace-tolerant form, both formats tested).
+
+## Project slug: never let the model derive it, never trust a hand-written formula
+
+confidence: verified
+
+**Symptom:** two memory directories for one project — e.g. `C--dev-my-app` (holds the `.jsonl` transcripts) and `C--dev-my_app` (holds a SESSION.md, no transcripts). Hooks read one, the model wrote the other; staleness / cwd / size checks and auto-capture silently see nothing.
+
+**Cause:** two independent errors. (1) Until v6.19.0 the SessionStart context told the model to *derive* the slug from a prose rule; models keep the underscore, drop a dash, etc. (2) `slug.sh` mapped only `/` and `_`, while Claude Code replaces **every non-alphanumeric character** of the native cwd with `-` (spaces, dots, non-ASCII; and a unix path keeps its leading `-`: `/home/u/p` → `-home-u-p`). Paths over 200 chars are truncated + hashed — no formula reproduces that.
+
+**Fix (v6.19.0):** `_resolve_project` in `bin/lib/slug.sh`. The slug is the parent directory name of `transcript_path` from hook stdin — exact, no formula. Formula is the fallback only; the pre-v6.19.0 formula survives as `_legacy_slug` so an upgrade still finds memory written under an old name. The hook hands the model **absolute paths**; nothing in the protocol asks it to compute one.
+
+**Lesson:** when the host tool already tells you where its files are, read that — don't re-implement its naming rule. And never ask the model to compute a path a hook can compute.
+
+## `"\\u"` in a JSON-escaped Windows path is not a unicode escape
+
+confidence: verified
+
+**Symptom:** `_transcript_path_from_json` returned empty for `"C:\\Users\\user\\…"` but worked for `"C:\\Users\\User\\…"`.
+
+**Cause:** the guard against undecodable `\uXXXX` escapes tested the raw JSON text for `\u`. In `\\user` the first backslash escapes the second — the pair is one path separator, and the `u` that follows is just a letter.
+
+**Fix:** park every `\\` pair in a placeholder first, *then* look for `\u`.
+
+**Lesson:** when scanning escaped text for an escape sequence, consume the escaped-backslash pairs before matching anything else.
+
+## Backslash patterns inside `"${var//…}"` differ across bash versions and under `eval`
+
+confidence: verified
+
+**Symptom:** `tp="${tp//\\\\/$'\x01'}"` passed `bash -n` and bats, yet the same line produced a different result when the function was called through `eval` — and `$'…'` inside a double-quoted expansion is not ANSI-C quoting at all.
+
+**Fix:** unquoted assignments, separator in a variable: `sep=$'\x01'; tp=${tp//\\\\/$sep}`. Assignments don't word-split, so the quotes buy nothing here.
+
+**Lesson:** for substitutions involving backslashes or control characters, keep the special character in a variable and leave the expansion unquoted on the right-hand side of an assignment. Verify by running the function from a script file, not only inline.
+
+## `grep -P` in a hook: fails on the hook's locale, and the fallback hid it
+
+confidence: verified
+
+**Symptom:** every auto-captured commit line read `git commit: (see git log)` — the commit message was never captured, on any commit.
+
+**Cause:** the message was parsed out of the command text with `grep -oP '(?<=-m …)'`. Under the hook's locale `grep -P` exits with `-P supports only unibyte and UTF-8 locales`; stderr went to `/dev/null`, the `|| true` swallowed the status, and the code fell through to its "(see git log)" default. The test only asserted that *a* capture line existed. Even with a working `grep -P` the regex returned `$(cat <<` for heredoc-style commits, and BSD grep has no `-P`.
+
+**Fix (v6.19.0):** don't parse the command. If the command *looks like* a commit, ask the repository: `git log -1 --format='%h %ct %s'`, accept it only if it is minutes old and its sha was not captured before (`memory/.auto-last-commit`).
+
+**Lesson:** a fallback value that is indistinguishable from "feature broken" needs a `_diag … degraded` line. And assert the *content* of a capture in tests, not its presence.
+
+## `merge-settings.sh` dedups by command — a changed matcher never reaches existing installs
+
+confidence: verified
+
+**Symptom:** `settings.snippet.json` changes the PostToolUse matcher; fresh installs get it, upgraded installs keep `"*"` forever. `install.sh` even reported "all hooks present".
+
+**Cause:** merge is idempotent by hook *command*: if the command is already registered, the source entry is skipped whole — matcher and extra hook keys included.
+
+**Fix (v6.19.0):** a sync pass — a target group holding exactly one hook, ours, takes `matcher` and any missing hook keys from the snippet. Groups the user combined with other hooks are untouched. `install.sh` now always runs the merge; exit code 10 means "already up to date, nothing written".
+
+**Lesson:** any change to `settings.snippet.json` other than adding a new command is a migration — add a test in `tests/install.bats` that starts from the previous shape.
+
+## Reading hook stdin must not block
+
+confidence: verified
+
+Hooks are also run by hand, by `doctor.sh` and by bats, where stdin is a terminal or an open pipe that never closes. `input=$(cat)` hangs there. `session-start.sh` uses `[[ -t 0 ]] || IFS= read -r -d '' -t 3 _hook_input || true`; `doctor.sh` runs its self-test with `</dev/null`.
+
+## Appending to SESSION.md from a hook costs the model a failed Write
+
+confidence: verified
+
+Claude Code refuses a `Write` to a file that changed since the model last read it. Every `[auto]` line PostToolUse appends therefore makes the model's next SESSION.md write fail once (re-read, retry). Keep appends rare: real commits only, and an identical `[auto] label: detail` line is never added twice.
+
+## PreCompact cannot make the model flush
+
+confidence: inferred
+
+Per the Claude Code hooks reference, compaction starts right after PreCompact returns — the model gets no turn in between, `systemMessage` is shown to the *user*, and plain stdout is appended to the *summarizer's* instructions. So `pre-compact.sh`'s "FLUSH REQUIRED" text reaches neither the model before compaction nor the summary. What actually protects state today is the continuous-update rule plus the SessionStart re-run after compaction. Not yet verified empirically; the redesign (stdout as summary instructions, deterministic side effects, PostCompact, SessionStart `source=compact`) is tracked in IDEAS.md.
+
+## A `# shellcheck disable=` directive covers only the next command
+
+confidence: verified
+
+**Symptom:** CI red on the shellcheck step with `SC2154: slug_source is referenced but not assigned` in `bin/doctor.sh`, although a `disable=SC2154` comment sat two lines above. bats never ran on that job — shellcheck is an earlier step.
+
+**Cause:** the directive was written above an assignment and was meant to also cover the `if` that followed. A directive applies to the single command after it (a whole `if`/`for`/function when placed directly above that compound command), not to "the lines below". shellcheck reports SC2154 once per variable per file, at the first uncovered reference.
+
+**Fix:** one directive directly above each command that first references a variable set by a sourced library.
+
+**Lesson:** shellcheck is not installed on the dev machine, so this class only surfaces in CI — open a PR rather than pushing to `main`, and read the ubuntu job first: a failure there in seconds means lint, not tests.

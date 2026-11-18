@@ -10,12 +10,14 @@ explicitly (that path promotes eagerly; this is the catch-all at task boundary).
 
 ## Step 0 — Locate the session
 
-Compute the project slug from cwd and read the current SESSION.md:
+Use the absolute SESSION.md / project.md paths the SessionStart hook injected at
+the start of this session. If they are no longer in context, resolve them with
+the same library the hooks use (never by hand):
 
 ```bash
-SLUG=$(cd "$PWD" && source "${CLAUDE_HOME:-$HOME/.claude}/bin/lib/slug.sh" && _compute_slug && printf '%s' "$slug")
-SESSION="${CLAUDE_HOME:-$HOME/.claude}/projects/$SLUG/memory/SESSION.md"
-PROJECT="${CLAUDE_HOME:-$HOME/.claude}/projects/$SLUG/memory/project.md"
+DIR=$(source "${CLAUDE_HOME:-$HOME/.claude}/bin/lib/slug.sh" && _resolve_project && printf '%s' "$project_dir")
+SESSION="$DIR/memory/SESSION.md"
+PROJECT="$DIR/memory/project.md"
 ```
 
 If no SESSION.md exists, tell the user there is nothing to close and stop.

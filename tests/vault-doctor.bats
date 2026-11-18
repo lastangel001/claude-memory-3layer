@@ -65,6 +65,37 @@ mk_session() {  # $1=slug  $2=last_updated  $3=extra-bytes
   ! grep -q 'wiped by vault-doctor' "$sf"
 }
 
+@test "vault-doctor does not call a closed (status: done) session stale" {
+  d="$TEST_HOME/projects/C--closed/memory"
+  mkdir -p "$d"
+  printf -- '---\nlast_updated: %s\ncwd: C:/some/closed\nstatus: done\n---\n# Goal\n(none)\n' \
+    "$(iso_ago $((90*86400)))" > "$d/SESSION.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh" --fix
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"C--closed"* ]]
+  ! ls "$d"/SESSION.md.bak-* >/dev/null 2>&1
+}
+
+@test "vault-doctor fails on a dead link in the repo CLAUDE.md doc index" {
+  mkdir -p "$WORK_DIR/.claude-docs"
+  printf -- '---\ndescription: g\n---\n# Gotchas\n' > "$WORK_DIR/.claude-docs/gotchas.md"
+  printf '# Repo\n\n| Task | Read |\n|---|---|\n| a | [g](.claude-docs/gotchas.md) |\n| b | [x](.claude-docs/architecture.md) |\n' \
+    > "$WORK_DIR/CLAUDE.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CLAUDE.md: broken link"*"architecture.md"* ]]
+  [[ "$output" != *"gotchas.md (target file missing)"* ]]
+}
+
+@test "vault-doctor passes when every CLAUDE.md doc-index link resolves" {
+  mkdir -p "$WORK_DIR/.claude-docs"
+  printf -- '---\ndescription: g\n---\n# Gotchas\n' > "$WORK_DIR/.claude-docs/gotchas.md"
+  printf '# Repo\n\n[g](.claude-docs/gotchas.md) and [site](https://example.invalid/x.md)\n' > "$WORK_DIR/CLAUDE.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"All relative links resolve"* ]]
+}
+
 @test "vault-doctor warns on oversize SESSION.md" {
   mk_session "C--big" "$(iso_ago 3600)" 9000 >/dev/null
   run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"

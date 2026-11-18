@@ -170,7 +170,7 @@ if [[ -x "$ss" ]]; then
   if [[ -n "$_tmp_home" && -n "$_tmp_cwd" ]]; then
     mkdir -p "$_tmp_home/bin/lib" "$_tmp_home/debug" "$_tmp_home/logs" "$_tmp_home/projects"
     cp "$CLAUDE_HOME/bin/lib/"*.sh "$_tmp_home/bin/lib/" 2>/dev/null || true
-    _out=$( cd "$_tmp_cwd" && CLAUDE_HOME="$_tmp_home" bash "$ss" 2>/dev/null ); _rc=$?
+    _out=$( cd "$_tmp_cwd" && CLAUDE_HOME="$_tmp_home" bash "$ss" 2>/dev/null </dev/null ); _rc=$?
     if [[ $_rc -eq 0 ]] && printf '%s' "$_out" | _validate_json_stream; then
       ok "session-start.sh runs clean (exit 0, valid JSON)"
     else
@@ -223,9 +223,14 @@ say ""
 say "Current project:"
 # shellcheck source=lib/slug.sh
 source "${CLAUDE_HOME}/bin/lib/slug.sh"
-_compute_slug
-# shellcheck disable=SC2154  # slug set by sourced _compute_slug
-session_file="$CLAUDE_HOME/projects/${slug}/memory/SESSION.md"
+_resolve_project
+# shellcheck disable=SC2154  # project_dir set by sourced _resolve_project
+session_file="${project_dir}/memory/SESSION.md"
+# A disable directive covers only the NEXT command, so the `if` needs its own.
+# shellcheck disable=SC2154  # slug_source set by sourced _resolve_project
+if [[ "$slug_source" == "legacy" ]]; then
+  warn "Memory for this project lives under the pre-v6.19.0 slug directory: $project_dir"
+fi
 if [[ ! -f "$session_file" ]]; then
   warn "No SESSION.md for current project (normal for new projects)"
 else
@@ -244,6 +249,77 @@ else
   else
     warn "SESSION.md missing cwd: field — CWD mismatch detection won't fire"
   fi
+fi
+say ""
+
+# ─────────────────────────────────────────────
+# 4b. Split memory directories
+# ─────────────────────────────────────────────
+# Claude Code names a project directory by replacing every non-alphanumeric
+# character of the cwd with "-". A memory directory created under any other
+# name (older slug formula, or a slug the model derived by hand) is a twin:
+# hooks read one directory, the model wrote the other. Report only — merging
+# two SESSION.md files is a human call.
+say "Memory directories:"
+_twins=0
+shopt -s nullglob
+for _d in "$CLAUDE_HOME/projects"/*/; do
+  _d="${_d%/}"
+  _n="${_d##*/}"
+  [[ -d "$_d/memory" ]] || continue
+  # A directory holding transcripts was created by Claude Code — canonical.
+  _jsonl=("$_d"/*.jsonl)
+  [[ ${#_jsonl[@]} -gt 0 ]] && continue
+  _canon="${_n//[^a-zA-Z0-9]/-}"
+  _twin=""
+  if [[ "$_canon" != "$_n" && -d "$CLAUDE_HOME/projects/$_canon" ]]; then
+    _twin="$_canon"
+  elif [[ -d "$CLAUDE_HOME/projects/-$_n" ]]; then
+    _twin="-$_n"          # unix: old formula stripped the leading dash
+  fi
+  if [[ -n "$_twin" ]]; then
+    _twins=$((_twins + 1))
+    if [[ -f "$CLAUDE_HOME/projects/$_twin/memory/SESSION.md" && -f "$_d/memory/SESSION.md" ]]; then
+      warn "Split memory: '$_n' and '$_twin' BOTH hold SESSION.md — compare and merge by hand into '$_twin'"
+    else
+      warn "Split memory: '$_n' is a twin of '$_twin' — move its memory/ files into '$_twin/memory/'"
+    fi
+  fi
+done
+shopt -u nullglob
+[[ $_twins -eq 0 ]] && ok "No split memory directories"
+say ""
+
+# ─────────────────────────────────────────────
+# 4c. Hook outcomes (last 7 days)
+# ─────────────────────────────────────────────
+# hook-diag.jsonl is written by bin/lib/diag.sh. Hooks fail open, so a feature
+# that silently degrades on every run shows up only here.
+say "Hook outcomes (last 7 days):"
+_diag_file="$CLAUDE_HOME/debug/hook-diag.jsonl"
+if [[ ! -f "$_diag_file" ]]; then
+  ok "No hook outcomes recorded yet"
+else
+  _cut=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+  # Fixed line shape: {"ts":"…","hook":"…","outcome":"…","note":"…"} → split on '"'.
+  _summary=$(awk -F'"' -v cut="$_cut" '
+    $4 >= cut { n[$8 " " $12]++; if ($12 != "ok") note[$8 " " $12 " " $16]++ }
+    END {
+      for (k in n) printf "S %s %d\n", k, n[k]
+      for (k in note) printf "N %s (x%d)\n", k, note[k]
+    }' "$_diag_file" 2>/dev/null | sort)
+  _bad=0
+  while IFS= read -r _l; do
+    [[ -z "$_l" ]] && continue
+    case "$_l" in
+      "S "*" ok "*) ok "${_l#S }" ;;
+      "S "*)        warn "${_l#S }"; _bad=1 ;;
+      "N "*)        warn "  ${_l#N }" ;;
+    esac
+  done <<< "$_summary"
+  [[ -z "$_summary" ]] && ok "No hook outcomes in the last 7 days"
+  [[ $_bad -eq 1 ]] && warn "degraded/failed outcomes above: a hook feature fell back silently — see ~/.claude/debug/hook-trace.log"
 fi
 say ""
 

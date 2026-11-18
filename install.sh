@@ -94,6 +94,7 @@ backup_and_install "$SRC/bin/gen-index.sh"             "$CLAUDE_HOME/bin/gen-ind
 backup_and_install "$SRC/bin/uninstall.sh"             "$CLAUDE_HOME/bin/uninstall.sh"
 backup_and_install "$SRC/bin/mcp-recall.mjs"           "$CLAUDE_HOME/bin/mcp-recall.mjs"
 backup_and_install "$SRC/bin/lib/slug.sh"              "$CLAUDE_HOME/bin/lib/slug.sh"
+backup_and_install "$SRC/bin/lib/diag.sh"              "$CLAUDE_HOME/bin/lib/diag.sh"
 backup_and_install "$SRC/bin/lib/paths.sh"             "$CLAUDE_HOME/bin/lib/paths.sh"
 backup_and_install "$SRC/bin/lib/validate-json.sh"     "$CLAUDE_HOME/bin/lib/validate-json.sh"
 
@@ -146,26 +147,25 @@ else
   grep -q 'hooks/session-start.sh' "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("SessionStart")
   grep -q 'hooks/pre-compact.sh'   "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("PreCompact")
   grep -q 'hooks/post-tool-use.sh' "$CLAUDE_HOME/settings.json" 2>/dev/null || missing_hooks+=("PostToolUse")
-  if [[ ${#missing_hooks[@]} -eq 0 ]]; then
-    say "  = $CLAUDE_HOME/settings.json (all hooks present)"
-  else
+  if [[ ${#missing_hooks[@]} -gt 0 ]]; then
     say "  ⚠ $CLAUDE_HOME/settings.json missing: ${missing_hooks[*]}"
     say "    Auto-merging hooks..."
-    _merge_ok=0
-    if [[ $DRY_RUN -eq 1 ]]; then
-      do_or_dry "bash '$SRC/bin/merge-settings.sh' --source '$SRC/settings.snippet.json' --target '$CLAUDE_HOME/settings.json'"
-      _merge_ok=1
-    else
-      if bash "$SRC/bin/merge-settings.sh" \
-           --source "$SRC/settings.snippet.json" \
-           --target "$CLAUDE_HOME/settings.json"; then
-        _merge_ok=1
-      fi
-    fi
-    if [[ $_merge_ok -eq 0 ]]; then
-      say "  ✗ Auto-merge failed. Fix manually:"
-      say "    Merge 'hooks' block from $SRC/settings.snippet.json into $CLAUDE_HOME/settings.json"
-    fi
+  fi
+  # Always run the merge, even when all three hooks are registered: it also
+  # syncs OUR hook entries with the snippet (matcher / async changes between
+  # versions). It is idempotent — rc 10 means "already up to date", and then
+  # nothing is written and no backup is made.
+  _merge_rc=0
+  if [[ $DRY_RUN -eq 1 ]]; then
+    do_or_dry "bash '$SRC/bin/merge-settings.sh' --source '$SRC/settings.snippet.json' --target '$CLAUDE_HOME/settings.json'"
+  else
+    bash "$SRC/bin/merge-settings.sh" \
+      --source "$SRC/settings.snippet.json" \
+      --target "$CLAUDE_HOME/settings.json" || _merge_rc=$?
+  fi
+  if [[ $_merge_rc -ne 0 && $_merge_rc -ne 10 ]]; then
+    say "  ✗ Auto-merge failed. Fix manually:"
+    say "    Merge 'hooks' block from $SRC/settings.snippet.json into $CLAUDE_HOME/settings.json"
   fi
 fi
 say ""

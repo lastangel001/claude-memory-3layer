@@ -9,7 +9,7 @@ Search across L0 identity, L1-fallback project notes, and L2 session memory usin
 `/recall --hybrid <query>` — full hybrid: BM25 + vector + LLM rerank. Requires `qmd embed` to be complete; loads ~2GB of GGUF models on first call of the session. Use when BM25 misses something obviously relevant.
 
 Optional flags:
-- `--here` — scope to current project's memory only (derive slug from cwd)
+- `--here` — scope to current project's memory only (slug = the directory name in the SESSION.md path the SessionStart hook injected)
 - `-c <collection>` — scope to one collection (`claude-l0` or `claude-projects`)
 - `-k <N>` — top-N hits (default 5)
 
@@ -33,18 +33,18 @@ Optional flags:
    First call of the session takes 10-60s to load embedding/reranker/query-expansion models. Subsequent calls are fast.
 
 4. Scoping:
-   - `--here`: derive slug from cwd (`C--dev-...`), add `--filter "qmd://claude-projects/<slug>/**"`
+   - `--here`: take `<slug>` from the injected SESSION.md path (`…/projects/<slug>/memory/SESSION.md`; if absent: `source ~/.claude/bin/lib/slug.sh && _resolve_project && echo "$slug"`), add `--filter "qmd://claude-projects/<slug>/**"`
    - `-c <name>` / `-k <N>`: pass through to qmd
 
-5. Display qmd's markdown output verbatim. Do NOT paraphrase paths/snippets. After hits, add one short orientation line (e.g. "looks like the relevant note is in `air/SESSION.md`").
+5. Display qmd's markdown output verbatim. Do NOT paraphrase paths/snippets. After hits, add one short orientation line (e.g. "looks like the relevant note is in `billing-api/SESSION.md`").
 
 6. **If hybrid mode fails** (`Error loading model` / `ErrorExtensionNotPresent`): silently fall back to `qmd search`, mention it once. Common cause: Vulkan/CUDA prebuilt mismatch on Windows.
 
 ## Examples
 
-- `/recall MongoDB legacy driver` — BM25, finds mpcmf projects with `\MongoClient` legacy adapter
+- `/recall MongoDB legacy driver` — BM25, finds the notes about the legacy `\MongoClient` adapter
 - `/recall --hybrid гочи WSL DNS` — hybrid, finds `CURLOPT_IPRESOLVE_V4` semantic-similar even without exact phrase match
-- `/recall --here armenia weekly window` — scope to current project
+- `/recall --here retry backoff window` — scope to current project
 
 ## Collections available
 

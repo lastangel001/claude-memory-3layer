@@ -5,7 +5,8 @@
 #   A. Account memory ($CLAUDE_HOME): IDENTITY.md size, SESSION.md oversize,
 #      stale sessions (>N days), transcript-export retention.
 #   B. Current repo .claude-docs/ (if cwd is a repo with one): missing
-#      frontmatter, broken relative md links, docs orphaned from index.md.
+#      frontmatter, broken relative md links (incl. the doc index in the repo's
+#      CLAUDE.md), docs orphaned from index.md.
 #
 # Usage:
 #   bash ~/.claude/bin/vault-doctor.sh              # report only
@@ -86,6 +87,9 @@ for sf in "$CLAUDE_HOME/projects"/*/memory/SESSION.md; do
     lu_epoch=$(date -d "$lu" +%s 2>/dev/null \
       || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$lu" +%s 2>/dev/null || echo 0)
   fi
+  # A closed session (`status: done`, wiped to template by /session-end or a
+  # previous --fix) is old by design — not stale, nothing left to wipe.
+  [[ "$(_fm_get "$sf" status)" == "done" ]] && continue
   if [[ "$lu_epoch" -gt 0 && "$lu_epoch" -lt "$_stale_cutoff" ]]; then
     age_days=$(( (_now - lu_epoch) / 86400 ))
     if [[ $FIX -eq 1 ]]; then
@@ -133,11 +137,41 @@ say ""
 # B. Current repo .claude-docs/ (only if present in cwd)
 # ─────────────────────────────────────────────
 docs_dir=""
+repo_root=""
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
-  _root=$(git rev-parse --show-toplevel 2>/dev/null)
-  [[ -d "$_root/.claude-docs" ]] && docs_dir="$_root/.claude-docs"
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+  [[ -d "$repo_root/.claude-docs" ]] && docs_dir="$repo_root/.claude-docs"
 fi
-[[ -z "$docs_dir" && -d "$PWD/.claude-docs" ]] && docs_dir="$PWD/.claude-docs"
+if [[ -z "$docs_dir" && -d "$PWD/.claude-docs" ]]; then
+  docs_dir="$PWD/.claude-docs"
+  repo_root="$PWD"
+fi
+
+# Report broken relative markdown links in one file: [text](target.md ...)
+# where the target is missing. $1=file, $2=label, $3..=base dirs to resolve against.
+_broken=0
+_check_links() {
+  local file="$1" label="$2"; shift 2
+  local target tgt b found
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    [[ "$target" =~ ^https?:// || "$target" == \#* ]] && continue
+    tgt="${target%%#*}"            # strip anchor
+    [[ -z "$tgt" ]] && continue
+    # Only validate path-like targets (contain an extension or a slash).
+    # Skips prose examples such as the literal `[text](path)` in conventions.md.
+    [[ "$tgt" == *.* || "$tgt" == */* ]] || continue
+    found=0
+    for b in "$@"; do
+      [[ -e "$b/$tgt" ]] && { found=1; break; }
+    done
+    if [[ $found -eq 0 ]]; then
+      fail "$label: broken link → $tgt (target file missing)"
+      _broken=1
+    fi
+  done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | sed -E 's/^\]\(//; s/\)$//')
+  return 0
+}
 
 if [[ -n "$docs_dir" ]]; then
   say "Repo docs ($docs_dir):"
@@ -156,21 +190,16 @@ if [[ -n "$docs_dir" ]]; then
       grep -q "$base" "$index" 2>/dev/null || warn "$base: orphaned — not linked from index.md"
     fi
 
-    # Broken relative markdown links: [text](target.md ...) where target missing.
-    while IFS= read -r target; do
-      [[ -z "$target" ]] && continue
-      [[ "$target" =~ ^https?:// || "$target" == \#* ]] && continue
-      tgt="${target%%#*}"            # strip anchor
-      [[ -z "$tgt" ]] && continue
-      # Only validate path-like targets (contain an extension or a slash).
-      # Skips prose examples such as the literal `[text](path)` in conventions.md.
-      [[ "$tgt" == *.* || "$tgt" == */* ]] || continue
-      if [[ ! -e "$docs_dir/$tgt" && ! -e "$(dirname "$md")/$tgt" ]]; then
-        fail "$base: broken link → $tgt (target file missing)"
-      fi
-    done < <(grep -oE '\]\(([^)]+)\)' "$md" 2>/dev/null | sed -E 's/^\]\(//; s/\)$//')
+    _check_links "$md" "$base" "$docs_dir" "$(dirname "$md")"
   done
-  [[ $fail -eq 0 ]] && ok "All relative links resolve"
+
+  # L1a entry point: the doc index in <repo>/CLAUDE.md is what routes an agent
+  # to L1b. A dead row there sends every session after a file that isn't there.
+  if [[ -n "$repo_root" && -f "$repo_root/CLAUDE.md" ]]; then
+    _check_links "$repo_root/CLAUDE.md" "CLAUDE.md" "$repo_root"
+  fi
+
+  [[ $_broken -eq 0 ]] && ok "All relative links resolve"
   say ""
 else
   say "Repo docs: (no .claude-docs/ in current repo — skipped)"
