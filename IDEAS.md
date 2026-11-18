@@ -103,11 +103,15 @@ After the 2026-11 review (hooks vs current Claude Code, [vectorize-io/hindsight]
 
 ### Open — blocked on something outside the code
 
-#### L/S — Observe one live compaction
+#### L/S — Observe the post-compaction re-injection
 
-**What:** in a real session, run `/compact` once and check: `memory/compact-snapshot.md` holds the right turns; the summary ends with the working-state line; the `<memory-record>` block arrives after the summary; `doctor.sh` → *Hook outcomes* shows `source=compact inject=session`.
+**Known so far (2026-11-18, one live idle auto-compaction on v6.23.0):** PreCompact fired with `trigger: auto` on a session nobody was using; the snapshot was written and was correct (last five user turns, verified against the transcript). No SessionStart `source: compact` followed — the next one was `resume`. Details in gotchas.md.
 
-**Blocked on:** a human. v6.20.0 is built on the documented hook contract and unit-tested on our side; a session cannot trigger its own compaction, and a nested `claude -p` is not an option. Until someone looks, the gotchas entry stays `confidence: inferred`.
+**Still to see:** a *manual* `/compact` typed in a session, then `doctor.sh` → *Hook outcomes*: is there a `SessionStart … source=compact inject=…` line, and did the `<memory-record>` block arrive after the summary?
+
+**Blocked on:** a human at the keyboard. A session cannot trigger its own compaction, another session cannot send it the command (a cross-session message is a user turn, not `/compact`), and a nested `claude -p` is not an option.
+
+**If `source: compact` never shows up on the idle path:** consider inlining SESSION.md on `resume` too when `compact-snapshot.md` is newer than the session's last recorded injection — but only once the manual path has been seen working, so there is something to compare against.
 
 #### L/S — Watch the background refresh across platforms
 

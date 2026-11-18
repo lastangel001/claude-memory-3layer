@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.23.1 — 2026-11-18 — docs: what a live auto-compaction showed
+
+No code change.
+
+**Changed**
+- **gotchas.md** records the first real compaction seen on the v6.20.0+ path. An idle session was auto-compacted (`trigger: auto`): `pre-compact.sh` ran and `compact-snapshot.md` held exactly the last five user turns — the hook side of the design is now `confidence: verified`. What did **not** happen: no SessionStart `source: compact` followed; the session's next SessionStart was `resume`. So the `<memory-record>` re-injection remains unobserved in production, and the fallback that certainly runs is the plain "read SESSION.md FIRST" instruction.
+- **IDEAS.md**: the open item is narrowed to what is still unseen — a manual `/compact` — with the note that it cannot be triggered from another session (a cross-session message is a user turn, not the command).
+
 ## v6.23.0 — 2026-11-18 — backlog tail: eval, timeline, recall for subagents
 
 **Fixed**

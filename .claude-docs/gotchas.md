@@ -213,10 +213,10 @@ Claude Code refuses a `Write` to a file that changed since the model last read i
 
 ## PreCompact cannot make the model flush — and its JSON output is thrown away
 
-confidence: inferred
+confidence: inferred (the event contract — from the hooks reference) · verified (our hook's side — observed in a live auto-compaction, see below)
 src: hooks/pre-compact.sh#compact-snapshot.sh @ abbb81b
 
-(Source: the Claude Code hooks reference, which states each point below explicitly. Not observed in a live compaction — a session cannot trigger its own. Our side of the contract is covered by `tests/pre-compact.bats`.)
+(Source: the Claude Code hooks reference, which states each point below explicitly. Our side of the contract is covered by `tests/pre-compact.bats`.)
 
 **Symptom:** the README promised "PreCompact fires, reminds Claude to flush, Claude writes SESSION.md". Nothing of the sort happened: no model ever acted on the reminder.
 
@@ -321,3 +321,21 @@ src: bin/recall.sh#_bre @ 2f32af5
 **Fix (v6.23.0):** escape the literal and use a regular expression — `grep -i -e "$(_bre "$term")"`, where `_bre` backslash-escapes `[ ] \ . * ^ $`. `tests/recall.bats` runs the grep path with ripgrep removed from PATH and asserts the script contains no `-i` + `-F` grep.
 
 **Lesson:** never combine `grep -i` with `-F` in a script that must run on Git Bash. And a fallback path needs its own test with the preferred tool taken away — otherwise it is only ever executed on the machines least able to report a failure.
+
+## What a live auto-compaction showed: PreCompact fires on an idle session, and nothing re-injects right after
+
+confidence: verified (what was observed) · inferred (the explanation)
+src: hooks/pre-compact.sh#snapshot=ok @ 0fa38ae, hooks/session-start.sh#hook_source @ 0fa38ae
+
+**Observed** (v6.23.0 installed, one real compaction that nobody triggered by hand): `trigger: auto` arrived for a session that had been idle for close to an hour. `pre-compact.sh` ran, the journal recorded `PreCompact ok snapshot=ok turns=5 trigger=auto`, and `memory/compact-snapshot.md` held exactly the last five user turns of that session (compared against its transcript), with no tool output or reminders in it and the three git lines present.
+
+**Not observed:** a SessionStart with `source: compact`. No SessionStart fired for that session in the quarter of an hour that followed, and the transcript gained no entry in that window. The next SessionStart it got was `source: resume` — where the hook does not inline SESSION.md, it only tells the model to read it.
+
+**Likely explanation (not confirmed):** Claude Code compacts idle sessions in the background (`idleCompaction`, `precomputeCompactionEnabled` in the settings reference). PreCompact fires when that work starts; the result is applied when the session is next used, and SessionStart `compact` — if it fires at all on that path — would come then, not at once.
+
+**Consequences for the design:**
+- The snapshot is written while nobody is in the session. That is fine — it is a point-in-time record, replaced at the next compaction — but "the snapshot exists" does not mean "the context was compacted".
+- The re-injection path (`source: compact` → `<memory-record>`) is still **unobserved in production**. The fallback that certainly runs is the plain one: the SessionStart context always carries the SESSION.md path and "read it FIRST".
+- A session cannot be made to compact from outside: a message sent to another session arrives as a labelled user turn, not as the `/compact` command. Only someone typing `/compact` in the session itself triggers a manual compaction.
+
+**Lesson:** a hook event's name describes when the harness *starts* something, not when the model sees the result. Journal every hook outcome with its `source` / `trigger` — this finding came from reading `hook-diag.jsonl`, not from an experiment.
