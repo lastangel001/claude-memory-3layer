@@ -13,6 +13,7 @@
 - **`search_memory` (MCP) without qmd** — the server scans memory files itself when qmd cannot be started (`MEMORY_RECALL_ENGINE=scan` forces it), and in every case also searches the current repo's `.claude-docs` / `CLAUDE.md` / `AGENTS.md`.
 - **`templates/agents/memory-researcher.md`** — opt-in, read-only subagent: several recall queries, reads what they surface, returns a `path:line — fact — confidence — citation` digest. Installed as a template only; enabling is a deliberate `cp` into `~/.claude/agents/`.
 - Tests: 191 → 209.
+- CI: `timeout-minutes: 25` on the test job (a hung test would otherwise hold a runner for six hours).
 
 **Backlog**
 - `IDEAS.md` is reorganised: every remaining idea is either *open* with what blocks it, or *parked / rejected* with the reason — no silent leftovers.

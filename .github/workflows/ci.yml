@@ -13,6 +13,9 @@ jobs:
         # windows-latest = Git Bash, the primary target platform
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # The suite takes 1-7 minutes. Without a cap a hung test (a hook waiting on
+    # stdin, a background child holding a pipe) would hold a runner for 6 hours.
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash

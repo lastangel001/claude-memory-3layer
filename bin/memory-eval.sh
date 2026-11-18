@@ -64,8 +64,10 @@ while IFS="$(printf '\t')" read -r q expect; do
   [[ -z "$q" || -z "$expect" ]] && continue
   total=$((total + 1))
   read -r -a qwords <<< "$q"
-  # Files /recall would hand an agent for this question.
-  hits=$(RECALL_NO_REFRESH=1 RECALL_NO_MISS_LOG=1 bash "$_here/recall.sh" --no-memory --engine rg -n "$top" -- "${qwords[@]}" 2>/dev/null \
+  # Files /recall would hand an agent for this question. `</dev/null`: this runs
+  # inside a `while read` loop — a child that read stdin would eat the remaining
+  # questions.
+  hits=$(RECALL_NO_REFRESH=1 RECALL_NO_MISS_LOG=1 bash "$_here/recall.sh" --no-memory --engine rg -n "$top" -- "${qwords[@]}" </dev/null 2>/dev/null \
            | sed -n 's/^### //p' | grep -v "/${file_base}\$" || true)
   found=""
   if [[ -n "$hits" ]]; then
