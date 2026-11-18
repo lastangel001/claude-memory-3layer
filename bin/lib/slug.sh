@@ -55,6 +55,13 @@ _transcript_path_from_json() {
   printf '%s' "$tp"
 }
 
+# Echo the "session_id" value from a hook stdin JSON blob, or nothing.
+_session_id_from_json() {
+  local json="${1:-}"
+  local re='"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9_-]+)"'
+  if [[ "$json" =~ $re ]]; then printf '%s' "${BASH_REMATCH[1]}"; fi
+}
+
 # Pre-v6.19.0 formula, kept only for the legacy-directory fallback.
 _legacy_slug() {
   local _cwd="${1:-$PWD}" s=""

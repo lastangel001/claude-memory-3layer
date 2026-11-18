@@ -47,6 +47,10 @@ _resolve_project "$_hook_input"
 # shellcheck disable=SC2154  # project_dir set by sourced _resolve_project
 session_file="${project_dir}/memory/SESSION.md"
 
+session_id=$(_session_id_from_json "$_hook_input")
+_sid_note=""
+[[ -n "$session_id" ]] && _sid_note=" sid=${session_id:0:8}"
+
 trigger="unknown"
 _trig_re='"trigger"[[:space:]]*:[[:space:]]*"([a-z]+)"'
 [[ "$_hook_input" =~ $_trig_re ]] && trigger="${BASH_REMATCH[1]}"
@@ -58,7 +62,7 @@ _note="snapshot=skipped"
 _outcome="ok"
 if [[ -f "$session_file" && -f "$CLAUDE_HOME/bin/compact-snapshot.sh" ]]; then
   _tp=$(_transcript_path_from_json "$_hook_input")
-  _n=$(bash "$CLAUDE_HOME/bin/compact-snapshot.sh" "$project_dir" "$_tp" "$trigger" "$PWD" 2>/dev/null || echo "")
+  _n=$(bash "$CLAUDE_HOME/bin/compact-snapshot.sh" "$project_dir" "$_tp" "$trigger" "$PWD" "$session_id" 2>/dev/null || echo "")
   if [[ "$_n" =~ ^[0-9]+$ ]]; then
     _note="snapshot=ok turns=${_n}"
     # Zero turns with a transcript on hand means the parser found nothing —
@@ -69,7 +73,8 @@ if [[ -f "$session_file" && -f "$CLAUDE_HOME/bin/compact-snapshot.sh" ]]; then
   fi
   echo "[$(date -Iseconds)] PreCompact: ${_note} trigger=${trigger}" >> "$CLAUDE_HOME/debug/hook-trace.log" || true
 fi
-declare -F _diag >/dev/null 2>&1 && _diag PreCompact "$_outcome" "${_note} trigger=${trigger}"
+# sid lets doctor.sh pair this compaction with the SessionStart that hands state back.
+declare -F _diag >/dev/null 2>&1 && _diag PreCompact "$_outcome" "${_note} trigger=${trigger}${_sid_note}"
 
 # --- 2. Instructions for the compaction summary (plain stdout) ---
 cat <<'EOF'

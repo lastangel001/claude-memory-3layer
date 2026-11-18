@@ -125,6 +125,34 @@ JSEOF
   [[ "$output" != *"PreCompact failed"* ]]
 }
 
+@test "doctor: compactions are paired with the hand-back that followed" {
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    # Manual compaction: handed back at once.
+    printf '{"ts":"%s","hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=5 trigger=manual sid=aaaa1111"}\n' "$now"
+    printf '{"ts":"%s","hook":"SessionStart","outcome":"ok","note":"slug=transcript source=compact inject=session snapshot=yes sid=aaaa1111"}\n' "$now"
+    # Idle compaction: picked up when the session was resumed.
+    printf '{"ts":"%s","hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=5 trigger=auto sid=bbbb2222"}\n' "$now"
+    printf '{"ts":"%s","hook":"SessionStart","outcome":"ok","note":"slug=transcript source=resume inject=session snapshot=yes sid=bbbb2222"}\n' "$now"
+    # Idle compaction of a session nobody has come back to; a plain startup of
+    # another session in between must not count as its hand-back.
+    printf '{"ts":"%s","hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=5 trigger=auto sid=cccc3333"}\n' "$now"
+    printf '{"ts":"%s","hook":"SessionStart","outcome":"ok","note":"slug=transcript source=startup sid=dddd4444"}\n' "$now"
+    # Out of the 7-day window.
+    printf '{"ts":"2001-01-01T00:00:00Z","hook":"PreCompact","outcome":"ok","note":"snapshot=ok turns=5 trigger=auto sid=eeee5555"}\n'
+  } >> "$TEST_HOME/debug/hook-diag.jsonl"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"3 started"*"1 handed back at once"*"1 picked up on resume"*"1 not handed back yet"* ]]
+}
+
+@test "doctor: no compactions is reported plainly" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Compactions (last 7 days):"* ]]
+  [[ "$output" == *"No compactions recorded"* ]]
+}
+
 @test "doctor: native auto memory ON is reported with the way to turn it off" {
   run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
   [ "$status" -eq 0 ]

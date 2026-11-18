@@ -322,26 +322,39 @@ src: bin/recall.sh#_bre @ 2f32af5
 
 **Lesson:** never combine `grep -i` with `-F` in a script that must run on Git Bash. And a fallback path needs its own test with the preferred tool taken away — otherwise it is only ever executed on the machines least able to report a failure.
 
-## What live compactions showed: the manual path works end to end; the idle path does not re-inject
+## What live compactions showed: busy sessions are handed back at once, idle ones on resume
 
-confidence: verified (what was observed) · inferred (the explanation of the idle case)
-src: hooks/pre-compact.sh#snapshot=ok @ ab55553, hooks/session-start.sh#hook_source @ ab55553
+confidence: verified (the three observations; the resume hand-back under test) · inferred (why the idle case differs; the resume hand-back on a real idle compaction)
+src: hooks/pre-compact.sh#snapshot=ok @ eae679d, hooks/session-start.sh#_inject_reason @ eae679d
 
-Two real compactions on v6.23.x, read from `hook-diag.jsonl` and the session transcripts.
+Three real compactions on v6.23.x, read from `hook-diag.jsonl` and the session transcripts.
 
 **Manual `/compact` — the whole chain, in order:**
 
 1. `PreCompact ok snapshot=ok turns=5 trigger=manual`. `compact-snapshot.md` held exactly the last five user turns (compared against the transcript), no tool output or reminders, three git lines.
-2. The compaction summary, 50-odd seconds later, **ended with the working-state line** the hook's stdout asked for — so plain stdout from a PreCompact hook does reach the summarizer.
-3. `SessionStart ok slug=transcript source=compact inject=session snapshot=yes`, two seconds after the summary. The transcript shows the order: `compact_boundary` → summary → re-attached files → the SessionStart hook's additional context. The `<memory-record>` block arrived complete — frame text, SESSION.md, snapshot — inline, not spilled to a file.
+2. The compaction summary **ended with the working-state line** the hook's stdout asked for — so plain stdout from a PreCompact hook does reach the summarizer.
+3. `SessionStart ok slug=transcript source=compact inject=session snapshot=yes`, right after the summary. The transcript shows the order: `compact_boundary` → summary → re-attached files → the SessionStart hook's additional context. The `<memory-record>` block arrived complete — frame text, SESSION.md, snapshot — inline, not spilled to a file.
 
-**Idle auto-compaction (`trigger: auto` on a session nobody had touched for close to an hour):** step 1 happened exactly as above. Steps 2 and 3 did not: no SessionStart fired for that session in the following quarter of an hour, its transcript gained no entry, and its next SessionStart was `source: resume` — where the hook only tells the model to read SESSION.md.
+**Auto-compaction of a session in use (`trigger: auto`, context ran out mid-task):** the same three steps, the same journal lines apart from the trigger. The model that continued had the `<memory-record>` in front of it before its first action.
 
-**Likely explanation of the idle case (not confirmed):** Claude Code compacts idle sessions in the background (`idleCompaction`, `precomputeCompactionEnabled` in the settings reference). PreCompact fires when that work starts; the result is applied when the session is next used.
+**Idle auto-compaction (`trigger: auto` on a session nobody had touched for close to an hour):** step 1 happened exactly as above. Steps 2 and 3 did not: no SessionStart fired for that session afterwards, its transcript gained no compaction entry, and its next SessionStart was `source: resume`.
+
+**Likely explanation of the idle case (not confirmed):** Claude Code compacts idle sessions in the background (`idleCompaction`, `precomputeCompactionEnabled` in the settings reference). PreCompact fires when that work starts; whether and when the result replaces the session's context cannot be seen from a hook or from the transcript.
+
+**What the hooks do about it (v6.24.0):**
+- `compact-snapshot.md` carries `session: <id>` and `generated: <time>` in its frontmatter.
+- On `source: resume`, SessionStart hands the record back when the snapshot names **this** session and `memory/.compact-handed-back` does not already hold `<session id> <generated>`. Then it writes that stamp. So a session compacted while idle is handed back on its next resume, once; a session that already got its record through `source: compact` is not handed it a second time.
+- The frame text on that path says the context *may* have been compacted — the hook does not claim to know.
+- `doctor.sh` → *Compactions* pairs `PreCompact … sid=X` with the next `SessionStart … inject=… sid=X`.
 
 **Consequences:**
 - "The snapshot exists" does not mean "the context was compacted" — on the idle path it is written while nobody is there.
-- After an idle compaction the session relies on the plain fallback: the SessionStart context always carries the SESSION.md path and "read it FIRST". Whether to inline on `resume` as well is an open item in IDEAS.md.
+- Never inline on *every* resume: Claude Code replays earlier hook context from the transcript, so each repeat is pure added weight. Hence the stamp.
+- One project directory can serve several sessions, and there is one snapshot file. Without the `session:` check a resumed session would be given another session's last user turns as its own history.
 - A session cannot be made to compact from outside: a message sent to another session arrives as a labelled user turn, not as the `/compact` command. The manual observation above needed a person typing it.
+- Still unmeasured: a real idle compaction followed by a resume on v6.24.0+. The doctor's "picked up on resume" count going above zero is that measurement.
+
+### History
+- 2026-11-18, v6.23.1 → v6.23.2: was "after an idle compaction the session relies on the plain fallback (the standing 'read SESSION.md FIRST' line); inlining on `resume` is an open item". Superseded by the resume hand-back above.
 
 **Lesson:** a hook event's name describes when the harness *starts* something, not when the model sees the result. Journal every hook outcome with its `source` / `trigger` — the idle finding came from reading `hook-diag.jsonl`, not from an experiment.

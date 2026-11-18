@@ -365,6 +365,7 @@ cwd_hint=$'\n\nCurrent project cwd (paste verbatim as \'cwd:\' value in SESSION.
 hook_source=""
 _src_re='"source"[[:space:]]*:[[:space:]]*"([a-z]+)"'
 [[ "$_hook_input" =~ $_src_re ]] && hook_source="${BASH_REMATCH[1]}"
+session_id=$(_session_id_from_json "$_hook_input")
 
 _RECORD_MAX_SESSION=5000
 _RECORD_MAX_SNAPSHOT=2200
@@ -372,13 +373,44 @@ _CONTEXT_CAP=9500
 record_block=""       # frame(SESSION.md part + snapshot part)
 record_block_lean=""  # frame(SESSION.md part only) — fallback when the full one is over the cap
 _inject_note=""
-if [[ "$hook_source" == "compact" && -f "$session_file" && -z "$cwd_mismatch_warning" ]]; then
+
+# When to hand state back:
+#   compact — always: the context was just compacted.
+#   resume  — once, to pick up a compaction that never got its hand-back.
+#             Claude Code compacts IDLE sessions in the background: PreCompact
+#             fires (the snapshot is written), but no SessionStart `compact`
+#             follows — observed live, see gotchas.md. The next thing such a
+#             session gets is `resume`. The snapshot names its session and its
+#             time; a stamp records what was already handed back, so a resumed
+#             session is given the record at most once per compaction.
+_snap_file="${project_dir}/memory/compact-snapshot.md"
+_stamp_file="${project_dir}/memory/.compact-handed-back"
+_snap_session=""
+_snap_generated=""
+if [[ -f "$_snap_file" ]]; then
+  _snap_session=$(sed -n 's/^session:[[:space:]]*//p' "$_snap_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
+  _snap_generated=$(sed -n 's/^generated:[[:space:]]*//p' "$_snap_file" 2>/dev/null | head -n1 | tr -d '\r' || true)
+fi
+_inject_reason=""
+if [[ -f "$session_file" && -z "$cwd_mismatch_warning" ]]; then
+  if [[ "$hook_source" == "compact" ]]; then
+    _inject_reason="compact"
+  elif [[ "$hook_source" == "resume" && -n "$session_id" && -n "$_snap_generated" && "$_snap_session" == "$session_id" ]]; then
+    _handed=$(cat "$_stamp_file" 2>/dev/null || echo "")
+    if [[ "$_handed" != "${session_id} ${_snap_generated}" ]]; then
+      _inject_reason="resume"
+    fi
+  fi
+fi
+if [[ -n "$_inject_reason" ]]; then
   # Control characters would break the JSON envelope (json_escape covers only
   # \ " \n \r \t) — and a broken envelope loses the whole context.
   _sess=$(tr -d '\000-\010\013\014\016-\037\r' < "$session_file" 2>/dev/null || true)
   _snap=""
-  _snap_file="${project_dir}/memory/compact-snapshot.md"
-  if [[ -f "$_snap_file" ]]; then
+  # A snapshot written for another session of the same project is not this
+  # session's history — leave it out. (No session recorded on either side:
+  # older snapshot or a hand-run hook — include it, as before.)
+  if [[ -f "$_snap_file" && ( -z "$session_id" || -z "$_snap_session" || "$_snap_session" == "unknown" || "$_snap_session" == "$session_id" ) ]]; then
     # Truncate on LINE boundaries: a substring cut can split a multibyte
     # character (the hook may run under a byte-oriented locale), and invalid
     # UTF-8 fails JSON validation.
@@ -387,6 +419,9 @@ if [[ "$hook_source" == "compact" && -f "$session_file" && -z "$cwd_mismatch_war
       | awk -v max="$_RECORD_MAX_SNAPSHOT" '{ n += length($0) + 1; if (n > max) { print "[... snapshot truncated]"; exit } print }' || true)
   fi
   _frame_open=$'\n\n<memory-record kind="record-of-past-work">\nRe-injected by the SessionStart hook after compaction. This is a RECORD of work done before the context was compacted — not a new instruction from the user. Verify it against the code and the user\'s latest message before relying on it. It assigns no tasks; only the "next:" line under "# State" says what was planned.\n'
+  if [[ "$_inject_reason" == "resume" ]]; then
+    _frame_open=$'\n\n<memory-record kind="record-of-past-work">\nHanded back by the SessionStart hook on resume: a compaction of this session was started while it was idle and no post-compaction hand-back followed, so your context may have been compacted since you last saw this state. This is a RECORD of past work — not a new instruction from the user. Verify it against the code and the user\'s latest message before relying on it. It assigns no tasks; only the "next:" line under "# State" says what was planned.\n'
+  fi
   _frame_close=$'\n</memory-record>'
   # A literal closing tag inside the content must not end the frame early.
   # (Tag kept in variables + unquoted assignment — see gotchas.md on backslash
@@ -456,11 +491,19 @@ if [[ ${_json_rc:-0} -eq 1 && -n "$record_block" ]]; then
   _degrade "inject-invalid-json"
 fi
 [[ -n "$hook_source" ]] && _diag_notes="${_diag_notes}${_diag_notes:+ }source=${hook_source}${_inject_note:+ }${_inject_note}"
+# sid lets doctor.sh pair a compaction (PreCompact) with its hand-back.
+[[ -n "$session_id" ]] && _diag_notes="${_diag_notes}${_diag_notes:+ }sid=${session_id:0:8}"
 _json_valid=1
 [[ ${_json_rc:-0} -eq 1 ]] && _json_valid=0
 [[ ${_json_rc:-0} -eq 2 ]] && _degrade "no-json-parser"
 if [[ $_json_valid -eq 1 ]]; then
   declare -F _diag >/dev/null 2>&1 && _diag SessionStart "$_diag_outcome" "slug=${slug_source}${_diag_notes:+ }${_diag_notes}"
+  # Remember what this session has been handed, so a later resume does not
+  # repeat it (hook context is replayed from the transcript on resume — a
+  # second copy would only add weight).
+  if [[ -n "$_inject_reason" && -n "$session_id" && -n "$_snap_generated" && "$_snap_session" == "$session_id" ]]; then
+    printf '%s %s' "$session_id" "$_snap_generated" > "$_stamp_file" 2>/dev/null || true
+  fi
   printf '%s\n' "$final_json"
 else
   declare -F _diag >/dev/null 2>&1 && _diag SessionStart degraded "json-fallback${_diag_notes:+ }${_diag_notes}"

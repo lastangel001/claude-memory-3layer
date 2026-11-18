@@ -106,7 +106,9 @@ Context fills mid-task and auto-compact starts — the model gets no turn, so it
 1. **PreCompact hook** writes `memory/compact-snapshot.md` — the last user turns *verbatim* and the git position — and hands the summarizer instructions on what to keep verbatim (its stdout is the only channel Claude Code offers a PreCompact hook).
 2. **SessionStart hook** runs again after compaction and re-injects `SESSION.md` plus that snapshot, wrapped in a `<memory-record>` block that says what it is: a record of past work to verify against the code, not a new instruction.
 
-Observed end to end on a manual `/compact` (the summary ends with the working-state line the hook asked for, and the `<memory-record>` arrives right after it). One caveat found the same way: when Claude Code compacts an *idle* session in the background, only step 1 runs — the session then falls back to the standing "read SESSION.md first" instruction.
+Observed end to end on a manual `/compact` and on an auto-compaction of a busy session (the summary ends with the working-state line the hook asked for, and the `<memory-record>` arrives right after it).
+
+**Idle sessions are the exception.** Claude Code also compacts a session nobody is using, in the background: step 1 runs, but no SessionStart `compact` follows — the next event that session gets is `resume`. So the snapshot records which session it belongs to, and on that session's next `resume` the hook hands back the same record, once per compaction (a stamp file keeps it from repeating on every resume). `doctor.sh` → *Compactions* counts how each compaction ended: handed back at once, picked up on resume, or not yet.
 
 What makes this work is the continuous-update rule: `SESSION.md` is written as the work proceeds, so it is already current when compaction hits. Resume is the same branch, the same next step, the same rationale.
 
@@ -208,6 +210,7 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
   - *Git worktrees* — in a linked worktree `project.md` is the **main checkout's** file (project knowledge belongs to the repository); `SESSION.md` stays per worktree (it is per-task state)
 - **PreCompact** — does two things that need no model. (1) Writes `memory/compact-snapshot.md` via `bin/compact-snapshot.sh`: last 5 user turns verbatim (`<private>` stripped; skipped entirely for a `.claude-private` project) + branch / HEAD / uncommitted count. Only for projects that already keep a `SESSION.md`. (2) Prints plain-text instructions for the compaction summary — keep recent user messages, identifiers, decisions with rationale and the next step verbatim. It does **not** ask the model to flush: compaction starts as soon as the hook returns, and Claude Code discards a PreCompact hook's `systemMessage` (which is all this hook emitted before v6.20.0).
   - *After compaction* SessionStart fires with `source: compact` and inlines `SESSION.md` (up to 5,000 chars) and the snapshot (up to 2,200) in a `<memory-record>` frame. The hook context is capped at 10,000 characters, so the hook sheds in order — snapshot first, then SESSION.md — and falls back to "read these two files now" rather than let Claude Code cut the tail to a preview. `transcript-export.sh` strips the frame so injected state is never indexed as conversation.
+  - *After an idle compaction* (no `source: compact` event) the same record is handed back on the session's next `source: resume` — only when `compact-snapshot.md` names this session (`session:` in its frontmatter) and `memory/.compact-handed-back` does not already hold this session + snapshot time. A snapshot left by another session of the same project is never inlined. Both hooks journal a short session id (`sid=`), which is what lets `doctor.sh` pair a compaction with its hand-back.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
   - a **new** git commit made via Bash or PowerShell → appends `<sha> <subject>`, read from `git log -1` (a command that merely mentions `git commit` captures nothing; one commit is captured once)
   - `Write` / `Edit` / `MultiEdit` of `**/CLAUDE.md` → notes L1a in-repo entry update
@@ -341,7 +344,7 @@ bin/lib/paths.sh                — shared PATH augmentation for Node/npm toolin
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (209 cases: hooks, memory eval, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (222 cases: hooks, memory eval, compaction path, recall, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements
