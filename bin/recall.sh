@@ -107,9 +107,10 @@ _rank() {  # $@ = paths
   ' | sort -t "$(printf '\t')" -k1,1nr -k2,2
 }
 _show_hits() {  # stdin: "score<TAB>path" lines; $1 = max files
-  local max="$1" n=0 score path args=() t
+  local max="$1" n=0 path args=() t
   for t in "${terms[@]}"; do args+=(-e "$t"); done
-  while IFS="$(printf '\t')" read -r score path; do
+  # First column is the score — only needed for the sort upstream.
+  while IFS="$(printf '\t')" read -r _ path; do
     [[ -z "$path" ]] && continue
     n=$((n + 1)); [[ $n -gt $max ]] && break
     printf '### %s\n' "$path"

@@ -22,6 +22,7 @@
 **Changed**
 - `memstat.sh`: BSD/macOS `stat` fallback for log ages. `commands/memstat.md` no longer describes one particular machine's GPU.
 - Unknown `install.sh` arguments are rejected (exit 2) instead of ignored.
+- `recall.sh`: unused loop variable removed (shellcheck SC2034 — the first CI run of this release stopped there, before the tests).
 
 **Upgrade notes**
 - `bash ~/.claude/bin/update.sh`, then `bash ~/.claude/bin/doctor.sh`. The first session start (or the first `/recall`) after upgrading rebuilds the index; expect one slower call.
