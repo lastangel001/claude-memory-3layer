@@ -96,6 +96,121 @@ mk_session() {  # $1=slug  $2=last_updated  $3=extra-bytes
   [[ "$output" == *"All relative links resolve"* ]]
 }
 
+# --- citations (src: path#symbol @ sha) ---
+
+# A git repo in WORK_DIR with src/a.sh committed; prints the commit's short sha.
+make_repo_with_code() {
+  git init -q . 2>/dev/null
+  mkdir -p src .claude-docs
+  printf 'retry_window() { echo 250; }\n' > src/a.sh
+  git add src/a.sh
+  git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false commit -q -m "add a.sh"
+  git rev-parse --short HEAD
+}
+
+touch_code() {  # $1 = how many more commits change src/a.sh
+  local i
+  for i in $(seq 1 "$1"); do
+    printf '# change %s\n' "$i" >> src/a.sh
+    git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false commit -q -am "change $i"
+  done
+}
+
+gotcha_with() {  # $1 = the src: line
+  printf -- '---\ndescription: g\n---\n# Gotchas\n\n## Retry window\nconfidence: verified\n%s\n\nThe window is 250 ms.\n' "$1" \
+    > .claude-docs/gotchas.md
+}
+
+@test "citation: existing file + symbol at a recent commit is current" {
+  sha="$(make_repo_with_code)"
+  gotcha_with "src: src/a.sh#retry_window @ $sha"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Citations: 1 checked, all current"* ]]
+}
+
+@test "citation: a cited file that is gone is flagged" {
+  sha="$(make_repo_with_code)"
+  gotcha_with "src: src/removed.sh#thing @ $sha"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cited file is gone"*"src/removed.sh"* ]]
+  [[ "$output" == *"1 of 1 need re-verification"* ]]
+}
+
+@test "citation: a cited symbol that is no longer in the file is flagged" {
+  sha="$(make_repo_with_code)"
+  gotcha_with "src: src/a.sh#old_function_name @ $sha"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"cited symbol 'old_function_name' is no longer in src/a.sh"* ]]
+}
+
+@test "citation: file changed in N commits since the cited one is flagged" {
+  sha="$(make_repo_with_code)"
+  touch_code 3
+  gotcha_with "src: src/a.sh#retry_window @ $sha"
+  run env CLAUDE_HOME="$TEST_HOME" VAULT_CITE_COMMITS=3 bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"src/a.sh changed in 3 commits since $sha"* ]]
+  # Below the threshold it is still current.
+  run env CLAUDE_HOME="$TEST_HOME" VAULT_CITE_COMMITS=4 bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"Citations: 1 checked, all current"* ]]
+}
+
+@test "citation: several per line, backticks tolerated, file-only form accepted" {
+  sha="$(make_repo_with_code)"
+  gotcha_with "src: \`src/a.sh#retry_window\` @ $sha, src/a.sh"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"Citations: 2 checked, all current"* ]]
+}
+
+@test "citation: an unknown commit is flagged" {
+  make_repo_with_code >/dev/null
+  gotcha_with "src: src/a.sh @ deadbee"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"cited commit deadbee is not in this repository"* ]]
+}
+
+@test "citation: src: lines inside a fenced code block are examples, not citations" {
+  make_repo_with_code >/dev/null
+  printf -- '---\ndescription: g\n---\n# Format\n\n```\nsrc: no/such/file.sh#x @ abc1234\n```\n' > .claude-docs/gotchas.md
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cited file is gone"* ]]
+  [[ "$output" != *"Citations:"* ]]
+}
+
+# --- L1a diet ---
+
+@test "diet: an over-long CLAUDE.md is flagged" {
+  mkdir -p .claude-docs
+  printf -- '---\ndescription: g\n---\n# G\n' > .claude-docs/gotchas.md
+  { printf '# Repo\n'; seq 1 250 | sed 's/^/- rule /'; } > CLAUDE.md
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLAUDE.md is 251 lines"* ]]
+}
+
+@test "diet: README prose copied into CLAUDE.md is flagged" {
+  mkdir -p .claude-docs
+  printf -- '---\ndescription: g\n---\n# G\n' > .claude-docs/gotchas.md
+  for i in 1 2 3 4 5 6; do
+    printf 'This is overview sentence number %s and it is comfortably longer than sixty characters.\n' "$i"
+  done > README.md
+  { printf '# Repo\n'; cat README.md; } > CLAUDE.md
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" == *"CLAUDE.md repeats 6 long lines of README.md"* ]]
+}
+
+@test "diet: a thin CLAUDE.md raises nothing" {
+  mkdir -p .claude-docs
+  printf -- '---\ndescription: g\n---\n# G\n' > .claude-docs/gotchas.md
+  printf '# Repo\n- run make test\n' > CLAUDE.md
+  printf '# Project\nA completely different and reasonably long sentence about the project lives in here.\n' > README.md
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"
+  [[ "$output" != *"CLAUDE.md is"* ]]
+  [[ "$output" != *"CLAUDE.md repeats"* ]]
+}
+
 @test "vault-doctor warns on oversize SESSION.md" {
   mk_session "C--big" "$(iso_ago 3600)" 9000 >/dev/null
   run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/vault-doctor.sh"

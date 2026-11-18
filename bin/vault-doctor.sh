@@ -6,7 +6,17 @@
 #      stale sessions (>N days), transcript-export retention.
 #   B. Current repo .claude-docs/ (if cwd is a repo with one): missing
 #      frontmatter, broken relative md links (incl. the doc index in the repo's
-#      CLAUDE.md), docs orphaned from index.md.
+#      CLAUDE.md), docs orphaned from index.md, stale `src:` citations, and an
+#      over-weight CLAUDE.md.
+#
+# Citations. A fact about specific code may carry, under its heading:
+#     src: path/to/file[#symbol] [@ <commit>]      (several: comma-separated)
+#   Checked here, as warnings (a stale fact is flagged, never deleted):
+#     - the file no longer exists
+#     - the symbol text is no longer in the file
+#     - the file changed in VAULT_CITE_COMMITS (default 5) or more commits since
+#       the cited one — re-verify, then move the citation forward
+#   `src:` lines inside fenced code blocks are examples and are skipped.
 #
 # Usage:
 #   bash ~/.claude/bin/vault-doctor.sh              # report only
@@ -20,6 +30,8 @@ STALE_DAYS="${VAULT_STALE_DAYS:-30}"
 IDENTITY_MAX_LINES=25
 SESSION_MAX_BYTES=8192
 TRANSCRIPT_MAX_BYTES="${TRANSCRIPT_MAX_BYTES:-307200}"   # 300 KB, matches transcript-export
+CITE_MAX_COMMITS="${VAULT_CITE_COMMITS:-5}"
+L1A_MAX_LINES="${VAULT_L1A_MAX_LINES:-200}"            # Claude Code's own guidance for a CLAUDE.md
 FIX=0
 
 while [[ $# -gt 0 ]]; do
@@ -173,6 +185,67 @@ _check_links() {
   return 0
 }
 
+# Check every `src:` citation in one doc. $1=file, $2=label.
+_cite_total=0
+_cite_stale=0
+_check_citations() {
+  local file="$1" label="$2" c path sym sha n in_git=0
+  git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && in_git=1
+  while IFS= read -r c; do
+    [[ -z "$c" ]] && continue
+    sha=""; sym=""
+    if [[ "$c" == *" @ "* ]]; then sha="${c##* @ }"; c="${c%% @ *}"; fi
+    if [[ "$c" == *"#"* ]]; then sym="${c#*#}"; path="${c%%#*}"; else path="$c"; fi
+    [[ -z "$path" ]] && continue
+    _cite_total=$((_cite_total + 1))
+    if [[ ! -e "$repo_root/$path" ]]; then
+      warn "$label: cited file is gone — $path (the fact that cites it may be stale)"
+      _cite_stale=$((_cite_stale + 1)); continue
+    fi
+    if [[ -n "$sym" ]] && ! grep -qF -- "$sym" "$repo_root/$path" 2>/dev/null; then
+      warn "$label: cited symbol '$sym' is no longer in $path"
+      _cite_stale=$((_cite_stale + 1)); continue
+    fi
+    if [[ -n "$sha" && $in_git -eq 1 ]]; then
+      if git -C "$repo_root" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+        n=$(git -C "$repo_root" rev-list --count "${sha}..HEAD" -- "$path" 2>/dev/null || echo 0)
+        if [[ "$n" =~ ^[0-9]+$ && "$n" -ge "$CITE_MAX_COMMITS" ]]; then
+          warn "$label: $path changed in $n commits since $sha — re-verify the fact that cites it, then move the citation forward"
+          _cite_stale=$((_cite_stale + 1))
+        fi
+      else
+        warn "$label: cited commit $sha is not in this repository (squashed away? cite a commit on the main branch)"
+        _cite_stale=$((_cite_stale + 1))
+      fi
+    fi
+  done < <(
+    # `src:` lines outside fenced code blocks -> one citation per line, trimmed.
+    awk '/^[[:space:]]*```/ { fence = !fence; next } !fence && /^[[:space:]]*src:[[:space:]]/ { sub(/^[[:space:]]*src:[[:space:]]*/, ""); print }' "$file" 2>/dev/null \
+      | tr -d '`\r' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+  )
+  return 0
+}
+
+# L1a diet: CLAUDE.md loads into every session in the repo. Two cheap signals
+# that it is carrying weight it should not.
+_lint_l1a() {
+  local f="$1" n dup
+  n=$(grep -c '' "$f" 2>/dev/null || echo 0)
+  if [[ "$n" -gt "$L1A_MAX_LINES" ]]; then
+    warn "CLAUDE.md is $n lines (> $L1A_MAX_LINES) — it loads into every session; move reference material to .claude-docs/ and keep commands, MUST / MUST NOT and the doc index"
+  fi
+  if [[ -f "$repo_root/README.md" ]]; then
+    # Long lines present verbatim in both files: overview prose copied from the
+    # README, which an agent can read on demand.
+    dup=$(awk 'length($0) >= 60' "$f" 2>/dev/null | tr -d '\r' | sort -u \
+            | grep -cxFf <(tr -d '\r' < "$repo_root/README.md" | awk 'length($0) >= 60' | sort -u) 2>/dev/null || true)
+    if [[ "$dup" =~ ^[0-9]+$ && "$dup" -ge 5 ]]; then
+      warn "CLAUDE.md repeats $dup long lines of README.md — link to the README instead of copying it"
+    fi
+  fi
+  return 0
+}
+
 if [[ -n "$docs_dir" ]]; then
   say "Repo docs ($docs_dir):"
   index="$docs_dir/index.md"
@@ -191,15 +264,24 @@ if [[ -n "$docs_dir" ]]; then
     fi
 
     _check_links "$md" "$base" "$docs_dir" "$(dirname "$md")"
+    _check_citations "$md" "$base"
   done
 
   # L1a entry point: the doc index in <repo>/CLAUDE.md is what routes an agent
   # to L1b. A dead row there sends every session after a file that isn't there.
   if [[ -n "$repo_root" && -f "$repo_root/CLAUDE.md" ]]; then
     _check_links "$repo_root/CLAUDE.md" "CLAUDE.md" "$repo_root"
+    _lint_l1a "$repo_root/CLAUDE.md"
   fi
 
   [[ $_broken -eq 0 ]] && ok "All relative links resolve"
+  if [[ $_cite_total -gt 0 ]]; then
+    if [[ $_cite_stale -eq 0 ]]; then
+      ok "Citations: $_cite_total checked, all current"
+    else
+      warn "Citations: $_cite_stale of $_cite_total need re-verification"
+    fi
+  fi
   say ""
 else
   say "Repo docs: (no .claude-docs/ in current repo — skipped)"

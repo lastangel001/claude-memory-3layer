@@ -138,9 +138,12 @@ From FIXME/HACK grep and `@deprecated` markers. Per entry:
 ## <Short title>
 
 confidence: inferred
+src: <path/to/file#symbol> @ <short-sha of HEAD>
 
 <What the gotcha is. Why it bites. Fix or workaround.>
 ```
+
+The `src:` line is what lets `vault-doctor.sh` tell you later that the code under an entry has moved on — add it whenever the entry is about one identifiable place in the code (cite the symbol, never a line number).
 
 Onboard-generated entries are always `confidence: inferred` (deduced from reading, not reproduced) — upgrade to `verified` when a session actually hits/reproduces the gotcha. Never delete an outdated entry: mark `status: superseded` and move the old claim to a dated `## History` line.
 
