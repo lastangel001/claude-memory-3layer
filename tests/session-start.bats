@@ -272,6 +272,102 @@ EOF
   [ "$(wc -l < "$TEST_CLAUDE_HOME/debug/hook-trace.log")" -lt 2100 ]
 }
 
+@test "closed session (status: done) does not raise the staleness warning" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago $((90*86400)))
+cwd: $PWD
+status: done
+---
+# Goal
+(none — last task: shipped)
+EOF
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"STALENESS WARNING"* ]]
+}
+
+@test "closed session in metadata-nested frontmatter is not stale either (matrix)" {
+  make_session "$PWD" <<EOF
+---
+name: ""
+metadata:
+  node_type: memory
+  last_updated: $(iso_ago $((90*86400)))
+  cwd: $PWD
+  status: done
+---
+# Goal
+(none)
+EOF
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"STALENESS WARNING"* ]]
+}
+
+@test "active old session still raises the staleness warning" {
+  make_session "$PWD" <<EOF
+---
+last_updated: $(iso_ago $((3*86400)))
+cwd: $PWD
+status: active
+---
+# Goal
+old task
+EOF
+  run_hook
+  [[ "$output" == *"STALENESS WARNING"* ]]
+}
+
+@test "context carries absolute memory paths and no derive-the-slug instruction" {
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/memory/SESSION.md"* ]]
+  [[ "$output" == *"/memory/project.md"* ]]
+  [[ "$output" == *"do NOT derive a project slug"* ]]
+  [[ "$output" != *"Derive project slug from cwd"* ]]
+}
+
+@test "transcript_path on stdin decides the project directory" {
+  d="$TEST_CLAUDE_HOME/projects/C--from-transcript/memory"
+  mkdir -p "$d"
+  cat > "$d/SESSION.md" <<EOF
+---
+last_updated: $(iso_ago $((3*86400)))
+cwd: $PWD
+---
+# Goal
+task of the transcript project
+EOF
+  printf '%s' '{"session_id":"s","transcript_path":"C:\\Users\\u\\.claude\\projects\\C--from-transcript\\abc.jsonl","source":"startup"}' > "$WORK_DIR/.in.json"
+  run bash -c "bash '$REPO_ROOT/hooks/session-start.sh' < '$WORK_DIR/.in.json'"
+  [ "$status" -eq 0 ]
+  json_is_valid "$output"
+  [[ "$output" == *"C--from-transcript/memory/SESSION.md"* ]]
+  [[ "$output" == *"STALENESS WARNING"* ]]
+}
+
+@test "legacy slug directory is used and announced when only it holds memory" {
+  source "$REPO_ROOT/bin/lib/slug.sh"
+  legacy="$(_legacy_slug "$PWD")"
+  _compute_slug "$PWD"
+  if [[ "$legacy" == "$slug" ]]; then skip "cwd has no character the formulas disagree on"; fi
+  mkdir -p "$TEST_CLAUDE_HOME/projects/$legacy/memory"
+  printf -- '---\nlast_updated: %s\ncwd: %s\n---\n# Goal\nx\n' "$(iso_ago 60)" "$PWD" \
+    > "$TEST_CLAUDE_HOME/projects/$legacy/memory/SESSION.md"
+  run_hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LEGACY MEMORY DIR"* ]]
+  [[ "$output" == *"$legacy/memory/SESSION.md"* ]]
+  grep -q '"outcome":"degraded","note":"slug=legacy legacy-slug-dir"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
+@test "a clean run is journaled as ok in hook-diag.jsonl" {
+  run_hook
+  [ "$status" -eq 0 ]
+  grep -q '"hook":"SessionStart","outcome":"ok","note":"slug=formula"' "$TEST_CLAUDE_HOME/debug/hook-diag.jsonl"
+}
+
 @test "output JSON stays valid with SESSION.md containing quotes and backslashes" {
   make_session "$PWD" <<'EOF'
 ---

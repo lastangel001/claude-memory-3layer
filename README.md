@@ -123,9 +123,9 @@ Context fills mid-task. PreCompact hook fires, reminds Claude to flush. Claude w
 BM25 + GGUF embeddings + LLM rerank over all your memory files. Backed by [qmd](https://github.com/tobi/qmd) (Tobi Lütke).
 
 ```
-/recall MongoDB legacy driver mpcmf
+/recall MongoDB legacy driver
 /recall гочи WSL DNS IPv6
-/recall --here armenia weekly window     # scope to current project
+/recall --here retry backoff window      # scope to current project
 ```
 
 ### `/codemap def|callers|callees|outline <symbol>` — on-demand symbol map
@@ -150,9 +150,9 @@ Internally uses `bin/onboard-report.sh` to collect raw data (stack files, direct
 /onboard-memory
 ```
 
-### `/memory status | auto on|off | refresh` — protocol controls
+### `/memory status | refresh` — index health
 
-Default mode is **explicit-promotion** — cross-session memory only when the user says "remember"/"запомни". Toggle to auto-capture per-session if you want it.
+Shows qmd collection health and forces an index refresh. Promotion has one mode, **explicit** — cross-session memory only when the user says "remember"/"запомни" (gotchas are the single always-write exception). The `auto on|off` toggle was removed in v6.19.0: its flag file was read by no hook, and the mode contradicted the rule above.
 
 ### `/session-end` — distil & close a task
 
@@ -185,7 +185,8 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
 ## Hooks (enforce discipline)
 
 - **SessionStart** — injects protocol reminder + active checks on every session open:
-  - *Staleness* — `SESSION.md` >24h old → forces explicit *"continue or reset?"* with user
+  - *Project directory* — resolved from the `transcript_path` Claude Code passes on hook stdin (exact), falling back to the naming formula; the context carries the **absolute paths** of `SESSION.md` and `project.md`, so the model never derives a slug by hand (a hand-derived slug splits memory across two directories — `doctor.sh` reports such twins)
+  - *Staleness* — `SESSION.md` >24h old → forces explicit *"continue or reset?"* with user; a closed session (`status: done`) is exempt
   - *CWD mismatch* — reads `cwd:` from `SESSION.md` frontmatter; if it doesn't match current directory, injects hard reset warning — agent never silently continues the wrong project's task
   - *CWD auto-inject* — computes canonical path and injects it as a ready-to-paste value so model always has the correct `cwd:` for new `SESSION.md` files
   - *Privacy redaction* — strips `<private>...</private>` blocks from `SESSION.md` in-place before injecting context (backup at `SESSION.md.bak`; CRLF-safe)
@@ -194,11 +195,14 @@ claude mcp add --scope user memory-recall -- node ~/.claude/bin/mcp-recall.mjs
   - Also kicks background `qmd update` debounced 6h (atomic marker — parallel sessions don't double-fire)
 - **PreCompact** — reminds Claude to flush working state to `SESSION.md` before compaction wipes context. Enforces three write rules: privacy (strip `<private>` tags), compression (write terse caveman prose), and CWD (ensure `cwd:` frontmatter is current). `SESSION.md` is the only artifact that survives compaction with full fidelity.
 - **PostToolUse** — selectively auto-captures three high-signal tool events to `SESSION.md`:
-  - `git commit` via Bash → appends commit message to session
-  - `Write` to `**/CLAUDE.md` → notes L1a in-repo entry update
-  - `Write` to `**/.claude-docs/*.md` → notes L1b doc update
+  - a **new** git commit made via Bash or PowerShell → appends `<sha> <subject>`, read from `git log -1` (a command that merely mentions `git commit` captures nothing; one commit is captured once)
+  - `Write` / `Edit` / `MultiEdit` of `**/CLAUDE.md` → notes L1a in-repo entry update
+  - `Write` / `Edit` / `MultiEdit` of `**/.claude-docs/*.md` → notes L1b doc update (Windows backslash paths included; repeated edits of one doc = one line)
+
+  Registered with matcher `Bash|PowerShell|Write|Edit|MultiEdit` and `async: true`; inside the script two pure-bash gates exit before any interpreter starts, so the hook adds no JSON-parsing cost to ordinary tool calls. Upgrading installs get the new matcher from `install.sh` automatically.
 
   Everything else is silently ignored — explicit-promotion philosophy preserved for all other events. JSON parsed via `python3 → node → jq → grep` fallback chain; run `bin/doctor.sh` to see which parser is active on your system.
+- **Outcome journal** — every hook run that matters writes one line to `~/.claude/debug/hook-diag.jsonl` (`ok` / `degraded` / `failed` + a short note). Hooks fail open by design; this is how a feature that silently falls back on every run becomes visible. `bin/doctor.sh` prints a 7-day summary.
 
 Beyond hook-driven capture, the protocol instructs Claude to write to SESSION.md on specific triggers — no "remember" needed:
 
@@ -292,19 +296,19 @@ memory/IDENTITY.md              — L0 template
 templates/repo/CLAUDE.md        — L1a template (thin in-repo entry)
 templates/repo/.claude-docs/*   — L1b templates (gotchas, architecture, conventions, index)
 templates/project.md.fallback.template — L1-fallback template (account-local)
-hooks/session-start.sh          — staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
+hooks/session-start.sh          — project-dir resolution + absolute memory paths + staleness + CWD mismatch + cwd auto-inject + privacy redaction + .claude-private exclusions + compression flag + qmd auto-refresh
 hooks/pre-compact.sh            — pre-compact flush reminder (privacy, compression, CWD rules)
-hooks/post-tool-use.sh          — selective auto-capture: git commit, CLAUDE.md writes, .claude-docs writes
+hooks/post-tool-use.sh          — selective auto-capture: new git commits, CLAUDE.md / .claude-docs edits
 commands/recall.md              — /recall slash command (hybrid memory search)
 commands/codemap.md             — /codemap slash command (symbol map)
-commands/memory.md              — /memory slash command (mode controls)
+commands/memory.md              — /memory slash command (index status + refresh)
 commands/memstat.md             — /memstat slash command (memory subsystem status)
 commands/onboard-memory.md      — /onboard-memory slash command: scan repo, create CLAUDE.md + .claude-docs/
 commands/migrate-legacy-memory.md — /migrate-legacy-memory slash command (legacy → L1-fallback synthesis)
 commands/session-end.md         — /session-end slash command (distil + wipe task ritual)
 bin/codemap.sh                  — universal-ctags + ripgrep symbol map
-bin/doctor.sh                   — install health check (files, settings, dup hooks, CRLF, dynamic self-test)
-bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links); --fix
+bin/doctor.sh                   — install health check (files, settings, dup hooks, CRLF, dynamic self-test, split memory dirs, hook outcomes)
+bin/vault-doctor.sh             — memory content health (IDENTITY/SESSION size, stale sessions, doc links incl. the CLAUDE.md doc index); --fix
 bin/gen-index.sh                — regenerate .claude-docs/index.md from doc frontmatter; --check for CI
 bin/uninstall.sh                — clean removal (strips only our hooks; preserves IDENTITY.md + projects/)
 bin/memstat.sh                  — memory subsystem status / task manager (backs /memstat)
@@ -313,12 +317,13 @@ bin/update.sh                   — one-step updater: git pull + re-install from
 bin/merge-settings.sh           — programmatic settings.json merge (called by install.sh; usable standalone)
 bin/mcp-recall.mjs              — zero-dep MCP server: search_memory + get_identity for subagents/headless
 bin/transcript-export.sh        — export Claude Code .jsonl transcripts → searchable markdown (SessionStart)
-bin/lib/slug.sh                 — shared slug computation library (sourced by hooks + doctor)
+bin/lib/slug.sh                 — project-directory resolver: transcript_path → formula → legacy dir (sourced by hooks, doctor, /session-end)
+bin/lib/diag.sh                 — hook outcome journal writer (debug/hook-diag.jsonl; sourced by all three hooks)
 bin/lib/paths.sh                — shared PATH augmentation for Node/npm tooling (sourced by session-start + memstat)
 bin/lib/validate-json.sh        — shared JSON validator (python3 → node → jq; sourced by install/doctor/merge/hook)
 migrate.sh                      — mechanical HTML-comment → YAML frontmatter migration (pre-AI step)
 settings.snippet.json           — hooks block for ~/.claude/settings.json (SessionStart + PreCompact + PostToolUse)
-tests/                          — bats-core test suite (78 cases: hooks, doctor, migrate, codemap, gen-index, vault-doctor)
+tests/                          — bats-core test suite (127 cases: hooks, slug resolver, install/settings migration, doctor, migrate, codemap, gen-index, vault-doctor)
 .githooks/pre-commit            — opt-in dev hook: runs bats + nudges on missing CHANGELOG (git config core.hooksPath .githooks)
 .github/workflows/ci.yml        — CI: bash -n + shellcheck + bats + index --check on ubuntu + windows (Git Bash)
 IDEAS.md                        — prioritised backlog of future enhancements

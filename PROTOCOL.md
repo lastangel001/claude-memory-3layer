@@ -20,7 +20,7 @@ Codebase facts live with the codebase. Personal preferences and per-task scratch
 | **L1-fallback** | `~/.claude/projects/<slug>/memory/project.md` | every session (hook) | no | projects without repo / not-in-repo context |
 | **L2 Session** | `~/.claude/projects/<slug>/memory/SESSION.md` | session start + after compact | no | per-task working state; survives compact, dies with task |
 
-`<slug>` = cwd: drive letter + `--` + rest with `\`/`/`/`_` → `-` (e.g. `C:\dev\my_app` → `C--dev-my-app`). `<repo>` = `git rev-parse --show-toplevel`. No journal/archive layer — sessions are per-task; carrying them forward is noise.
+`<slug>`: do NOT derive it — the SessionStart hook injects the absolute SESSION.md / project.md paths; use those verbatim. Only when no hook context exists (subagent, hooks off): native cwd with every non-alphanumeric char → `-` (`C:\dev\my_app` → `C--dev-my-app`, `/home/u/p` → `-home-u-p`). `<repo>` = `git rev-parse --show-toplevel`. No journal/archive layer — sessions are per-task; carrying them forward is noise.
 
 ## ON SESSION START — DO THIS FIRST
 
@@ -101,7 +101,7 @@ Context window = RAM (expensive). Files = disk (cheap). Read disk on demand, don
 
 - **`/recall <query>`** — search across all memory layers (BM25 default; `--hybrid` adds vectors). First stop for "did we already see this?" / past decisions / gotchas.
 - **`/codemap def|callers|callees|outline <symbol>`** — symbol map via ctags+ripgrep. "Where defined / who calls / structure".
-- **`/memory status|auto on|off|refresh`** — protocol controls; `refresh` rebuilds the qmd vector index (manual only).
+- **`/memory status|refresh`** — index health; `refresh` rebuilds the qmd vector index (manual only).
 - **`/memstat [--watch]`** — memory subsystem task manager (processes, index progress, health).
 
 Knowledge → `/recall`. Code structure → `/codemap`. Known file → `Read`/`Grep`. Don't preload `.claude-docs/*` — `/recall` first, then Read the 1-2 files the hits surface.

@@ -77,6 +77,46 @@ JSEOF
   [[ "$output" == *"Duplicate hook registrations"* ]]
 }
 
+@test "doctor: no split memory directories on a fresh install" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"No split memory directories"* ]]
+}
+
+@test "doctor: hand-derived slug directory is reported as a twin" {
+  # Canonical directory (as Claude Code names it) + a twin the model derived
+  # by hand, keeping the underscore. Both hold a SESSION.md.
+  mkdir -p "$TEST_HOME/projects/C--dev-my-app/memory" "$TEST_HOME/projects/C--dev-my_app/memory"
+  printf '{}\n' > "$TEST_HOME/projects/C--dev-my-app/abc.jsonl"
+  printf '# Goal\na\n' > "$TEST_HOME/projects/C--dev-my-app/memory/SESSION.md"
+  printf '# Goal\nb\n' > "$TEST_HOME/projects/C--dev-my_app/memory/SESSION.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Split memory"*"C--dev-my_app"*"BOTH hold SESSION.md"* ]]
+}
+
+@test "doctor: unix legacy directory without the leading dash is reported" {
+  mkdir -p "$TEST_HOME/projects/-home-u-proj" "$TEST_HOME/projects/home-u-proj/memory"
+  printf '# Goal\nb\n' > "$TEST_HOME/projects/home-u-proj/memory/SESSION.md"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [[ "$output" == *"Split memory"*"home-u-proj"*"move its memory/"* ]]
+}
+
+@test "doctor: degraded hook outcomes are surfaced" {
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    printf '{"ts":"%s","hook":"SessionStart","outcome":"ok","note":"slug=transcript"}\n' "$now"
+    printf '{"ts":"%s","hook":"PostToolUse","outcome":"degraded","note":"grep-fallback-parser"}\n' "$now"
+    printf '{"ts":"2001-01-01T00:00:00Z","hook":"PreCompact","outcome":"failed","note":"old"}\n'
+  } >> "$TEST_HOME/debug/hook-diag.jsonl"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/bin/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SessionStart ok"* ]]
+  [[ "$output" == *"PostToolUse degraded"* ]]
+  [[ "$output" == *"grep-fallback-parser"* ]]
+  # Entries older than 7 days are out of the window.
+  [[ "$output" != *"PreCompact failed"* ]]
+}
+
 @test "doctor: broken runtime copy fails the self-test" {
   # Corrupt the installed session-start.sh so it exits non-zero.
   printf '\nexit 3\n' >> "$TEST_HOME/hooks/session-start.sh"

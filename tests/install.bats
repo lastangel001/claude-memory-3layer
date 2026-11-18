@@ -87,6 +87,81 @@ EOF
   grep -q 'other-tool/hook.sh'     "$TEST_HOME/settings.json"
 }
 
+@test "upgrade migrates our old PostToolUse '*' matcher and adds async (v6.19.0)" {
+  source "$REPO_ROOT/bin/lib/validate-json.sh"
+  case "$(_json_parser)" in
+    python3|node) ;;
+    *) skip "matcher sync needs python3 or node" ;;
+  esac
+  mkdir -p "$TEST_HOME"
+  cat > "$TEST_HOME/settings.json" <<'EOF'
+{
+  "model": "keep-me",
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/session-start.sh"}]}
+    ],
+    "PreCompact": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/pre-compact.sh"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/other-tool/ptu.sh"}]},
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/post-tool-use.sh"}]}
+    ]
+  }
+}
+EOF
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  grep -q '"matcher": "Bash|PowerShell|Write|Edit|MultiEdit"' "$TEST_HOME/settings.json"
+  grep -q '"async": true' "$TEST_HOME/settings.json"
+  # The other tool keeps its own matcher; unrelated keys survive.
+  grep -q 'other-tool/ptu.sh' "$TEST_HOME/settings.json"
+  [ "$(grep -c '"matcher": "\*"' "$TEST_HOME/settings.json")" -eq 3 ]
+  grep -q '"model": "keep-me"' "$TEST_HOME/settings.json"
+}
+
+@test "re-running install on an up-to-date settings.json rewrites nothing" {
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  before="$(cat "$TEST_HOME/settings.json")"
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already up to date"* ]]
+  [ "$(cat "$TEST_HOME/settings.json")" = "$before" ]
+  ! ls "$TEST_HOME"/settings.json.bak-* >/dev/null 2>&1
+}
+
+@test "a group the user combined with another hook keeps its matcher" {
+  source "$REPO_ROOT/bin/lib/validate-json.sh"
+  case "$(_json_parser)" in
+    python3|node) ;;
+    *) skip "matcher sync needs python3 or node" ;;
+  esac
+  mkdir -p "$TEST_HOME"
+  cat > "$TEST_HOME/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/session-start.sh"}]}
+    ],
+    "PreCompact": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/pre-compact.sh"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "*", "hooks": [
+        {"type": "command", "command": "bash ~/.claude/hooks/post-tool-use.sh"},
+        {"type": "command", "command": "bash ~/other-tool/ptu.sh"}
+      ]}
+    ]
+  }
+}
+EOF
+  run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'Bash|PowerShell' "$TEST_HOME/settings.json"
+}
+
 @test "fresh-install settings.json contains our hook commands" {
   run env CLAUDE_HOME="$TEST_HOME" bash "$REPO_ROOT/install.sh"
   [ "$status" -eq 0 ]

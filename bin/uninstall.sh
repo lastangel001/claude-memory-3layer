@@ -51,7 +51,7 @@ COMMANDS=(recall.md codemap.md memory.md memstat.md onboard-memory.md
 BINS=(codemap.sh doctor.sh memstat.sh merge-settings.sh onboard-report.sh
       transcript-export.sh update.sh mcp-recall.mjs vault-doctor.sh
       gen-index.sh uninstall.sh)
-LIBS=(slug.sh paths.sh validate-json.sh)
+LIBS=(slug.sh diag.sh paths.sh validate-json.sh)
 
 say ""
 say "=== claude-memory-3layer uninstaller ==="

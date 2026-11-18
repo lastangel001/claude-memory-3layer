@@ -24,11 +24,12 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/post-tool-use.sh"
+            "command": "bash ~/.claude/hooks/post-tool-use.sh",
+            "async": true
           }
         ]
       }

@@ -14,10 +14,16 @@ _hook_error() {
   local rc=$1 lineno=$2
   echo "[$(date -Iseconds)] PreCompact ERROR rc=${rc} line=${lineno}" \
     >> "$CLAUDE_HOME/debug/hook-trace.log" 2>/dev/null || :
+  declare -F _diag >/dev/null 2>&1 && _diag PreCompact failed "line=${lineno} rc=${rc}"
   printf '{"systemMessage":"MEMORY HOOK ERROR: pre-compact.sh failed at line %s. Check ~/.claude/debug/hook-trace.log. Flush SESSION.md manually before compaction."}\n' "$lineno"
   exit 0
 }
 trap '_hook_error $? "${BASH_LINENO[0]}"' ERR
+
+# Outcome journal (optional lib — a partial install must not break the hook).
+# shellcheck source=../bin/lib/diag.sh
+[[ -f "${CLAUDE_HOME}/bin/lib/diag.sh" ]] && source "${CLAUDE_HOME}/bin/lib/diag.sh"
+declare -F _diag >/dev/null 2>&1 && _diag PreCompact ok ""
 
 # --- SESSION compression flag ---
 # Priority: env var CLAUDE_SESSION_COMPRESS → flag file → default on.
